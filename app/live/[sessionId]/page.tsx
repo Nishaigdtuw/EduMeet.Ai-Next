@@ -1,20 +1,26 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from "react"
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, BookOpen, AlertCircle, Send, CheckCircle2, ArrowLeft, X, Sparkles, Smile, Play, Pause, RefreshCw } from "lucide-react"
+import {
+  Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, BookOpen,
+  AlertCircle, Send, CheckCircle2, ArrowLeft, X, Sparkles, Smile, Play, Pause,
+  RefreshCw, Volume2, ShieldAlert, UserX
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { useRouter, useParams } from "next/navigation"
 import { getAuthenticatedUser } from "@/lib/auth-guard"
 import {
-  LiveMeetingSession,
-  getStoredMeeting,
-  saveStoredMeeting,
-  requestMediaStream
-} from "@/lib/webrtc-meeting"
+  WebRTCSFUClient,
+  SFUParticipant,
+  EphemeralReaction,
+  ConnectionState
+} from "@/lib/webrtc-sfu"
+import { LiveMeetingSession, getStoredMeeting } from "@/lib/webrtc-meeting"
 import { FinalLectureSummary, saveLectureSummary } from "@/lib/data-store"
 import { TeacherLectureSummaryModal } from "@/components/teacher-lecture-summary-modal"
 
@@ -23,280 +29,271 @@ export default function LiveMeetingRoomPage() {
   const params = useParams()
   const sessionId = (params?.sessionId as string) || "sess-dsa-1"
 
-  const [self, setSelf] = useState<{ name?: string; role?: 'student' | 'teacher' } | null>(null)
+  const [self, setSelf] = useState<{ userId: string; name: string; role: 'student' | 'teacher' }>({
+    userId: 'student-demo',
+    name: 'Alex Rivera',
+    role: 'student'
+  })
+
   const [session, setSession] = useState<LiveMeetingSession | null>(null)
+  const [sfuClient, setSfuClient] = useState<WebRTCSFUClient | null>(null)
+  const [connectionState, setConnectionState] = useState<ConnectionState>('Connecting')
 
   // Pre-join & Media Stream State
   const [joined, setJoined] = useState(false)
   const [micOn, setMicOn] = useState(true)
   const [cameraOn, setCameraOn] = useState(true)
-  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null)
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [mediaError, setMediaError] = useState<string | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const stageVideoRef = useRef<HTMLVideoElement | null>(null)
+  const preJoinVideoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Real-time SFU Participants & Active Speaker State
+  const [participants, setParticipants] = useState<SFUParticipant[]>([])
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
 
   // In-Meeting Panels State ('none' | 'chat' | 'participants' | 'notes')
   const [activePanel, setActivePanel] = useState<'none' | 'chat' | 'participants' | 'notes'>('notes')
+  const [chatMessages, setChatMessages] = useState<Array<{ id: string; senderId: string; senderName: string; senderRole: 'teacher' | 'student'; text: string; timestamp: string }>>([])
   const [chatInput, setChatInput] = useState("")
 
   // Live "Notes So Far" Engine State
   const [isNotesPaused, setIsNotesPaused] = useState(false)
   const [isUpdatingNotes, setIsUpdatingNotes] = useState(false)
   const [lastUpdatedTime, setLastUpdatedTime] = useState<string>(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-  const [liveNotesContent] = useState({
 
-    currentTopic: "Tree Traversal (DFS & BFS)",
-    keyPoints: [
-      "A tree contains nodes connected hierarchically from a root node.",
-      "Depth-First Search (DFS) explores one branch completely before backtracking.",
-      "Recursive DFS uses the system call stack frames.",
-      "Breadth-First Search (BFS) explores nodes level-by-level using a FIFO Queue."
-    ],
-    importantDefinition: "Inorder Traversal (BST): Left -> Root -> Right yields strictly sorted node keys.",
-    example: "BST nodes [5, 3, 7] -> Inorder yields [3, 5, 7].",
-    codeOrFormula: "def inorder(root):\n  if not root: return\n  inorder(root.left)\n  print(root.val)\n  inorder(root.right)"
-  })
+  // Ephemeral Reactions State
+  const [activeReactions, setActiveReactions] = useState<EphemeralReaction[]>([])
+  const [showReactionsMenu, setShowReactionsMenu] = useState(false)
 
-  // Final Lecture Summary Teacher Review Modal State
+  // End Class Dialog & Teacher Lecture Summary Review Modal State
+  const [showEndClassConfirm, setShowEndClassConfirm] = useState(false)
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false)
   const [generatedSummary, setGeneratedSummary] = useState<FinalLectureSummary | null>(null)
 
-  // Live Real-Time Meeting Reactions State
-  const [activeReactions, setActiveReactions] = useState<Array<{ id: string; emoji: string; senderName: string }>>([])
-  const [showReactionsMenu, setShowReactionsMenu] = useState(false)
-  const [reactionCooldown, setReactionCooldown] = useState(false)
-
-  const triggerReactionAnimation = (emoji: string, senderName: string) => {
-    const reactionId = `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
-    setActiveReactions((prev) => [...prev, { id: reactionId, emoji, senderName }])
-    setTimeout(() => {
-      setActiveReactions((prev) => prev.filter((r) => r.id !== reactionId))
-    }, 2500)
-  }
-
-  const handleSendReaction = (emoji: string) => {
-    if (reactionCooldown) return
-    setReactionCooldown(true)
-    setTimeout(() => setReactionCooldown(false), 800)
-
-    const sender = self?.name || "Participant"
-    triggerReactionAnimation(emoji, sender)
-
-    try {
-      const channel = new BroadcastChannel(`aulyn_meeting_reactions_${sessionId}`)
-      channel.postMessage({ emoji, senderName: sender, timestamp: Date.now() })
-      channel.close()
-    } catch {
-      localStorage.setItem(`aulyn_reaction_${sessionId}`, JSON.stringify({ emoji, senderName: sender, timestamp: Date.now() }))
-    }
-    setShowReactionsMenu(false)
-  }
-
-  // Real-time broadcast listener for meeting reactions
-  useEffect(() => {
-    let channel: BroadcastChannel | null = null
-    try {
-      channel = new BroadcastChannel(`aulyn_meeting_reactions_${sessionId}`)
-      channel.onmessage = (event) => {
-        if (event.data?.emoji && event.data?.senderName) {
-          triggerReactionAnimation(event.data.emoji, event.data.senderName)
-        }
-      }
-    } catch {
-      // fallback
-    }
-
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === `aulyn_reaction_${sessionId}`) {
-        try {
-          const data = JSON.parse(e.newValue || '{}')
-          if (data.emoji && data.senderName) {
-            triggerReactionAnimation(data.emoji, data.senderName)
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-    window.addEventListener("storage", handleStorage)
-
-    return () => {
-      if (channel) channel.close()
-      window.removeEventListener("storage", handleStorage)
-    }
-  }, [sessionId])
-
-  // Periodic Live "Notes So Far" Simulation Engine (Updates every 60s if not paused)
-  useEffect(() => {
-    if (isNotesPaused) return
-
-    const interval = setInterval(() => {
-      setIsUpdatingNotes(true)
-      setTimeout(() => {
-        setLastUpdatedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-        setIsUpdatingNotes(false)
-      }, 800)
-    }, 60000)
-
-    return () => clearInterval(interval)
-  }, [isNotesPaused])
-
+  // Initialize Session Identity & Authorization
   useEffect(() => {
     const user = getAuthenticatedUser()
+    let currentSelf = { userId: 'student-demo', name: 'Alex Rivera', role: 'student' as 'student' | 'teacher' }
+
     if (user) {
-      setSelf({ name: user.name, role: user.role as 'student' | 'teacher' })
-    } else {
-      setSelf({ name: "Alex Rivera", role: "student" })
+      currentSelf = { userId: user.userId, name: user.name, role: user.role as 'student' | 'teacher' }
+      setSelf(currentSelf)
     }
 
-    const s = getStoredMeeting(sessionId)
-    setSession(s)
+    // Verify session & enrollment via server API
+    fetch(`/api/live/session?sessionId=${sessionId}&userId=${currentSelf.userId}&role=${currentSelf.role}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.session) {
+          setSession(data.session)
+          if (data.session.chatMessages) {
+            setChatMessages(data.session.chatMessages)
+          }
+        } else {
+          toast.error(data.error || "Failed to load live session.")
+          const s = getStoredMeeting(sessionId)
+          setSession(s)
+        }
+      })
+      .catch(() => {
+        const s = getStoredMeeting(sessionId)
+        setSession(s)
+      })
   }, [sessionId])
 
-  // Initialize Local Media Stream
-  useEffect(() => {
-    let activeStream: MediaStream | null = null
-    const initMedia = async () => {
-      const { stream, error } = await requestMediaStream(micOn, cameraOn)
-      if (stream) {
-        activeStream = stream
-        setMediaStream(stream)
-        setMediaError(null)
-      } else if (error) {
-        setMediaError(error)
-      }
+  // Request Initial Media Permission on Pre-Join
+  const initLocalMedia = async () => {
+    setMediaError(null)
+    if (typeof window === "undefined" || !navigator?.mediaDevices) {
+      setMediaError("Media devices API is not supported in this browser.")
+      return
     }
-    initMedia()
 
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: micOn ? { echoCancellation: true, noiseSuppression: true } : false,
+        video: cameraOn ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
+      })
+      setLocalStream(stream)
+    } catch (err: unknown) {
+      let msg = "Microphone and camera access failed."
+      if (err instanceof DOMException) {
+        if (err.name === 'NotAllowedError') {
+          msg = "Camera and Microphone permissions were denied."
+        } else if (err.name === 'NotFoundError') {
+          msg = "No compatible camera or microphone device was found."
+        } else if (err.name === 'NotReadableError') {
+          msg = "Camera or Microphone is currently occupied by another application."
+        }
+      }
+      setMediaError(msg)
+    }
+  }
+
+  useEffect(() => {
+    initLocalMedia()
     return () => {
-      if (activeStream) {
-        activeStream.getTracks().forEach((t) => t.stop())
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop())
       }
     }
   }, [micOn, cameraOn])
 
-  // Attach Stream to Video Elements
   useEffect(() => {
-    if (videoRef.current && mediaStream) {
-      videoRef.current.srcObject = mediaStream
+    if (preJoinVideoRef.current && localStream) {
+      preJoinVideoRef.current.srcObject = localStream
     }
-    if (stageVideoRef.current && mediaStream) {
-      stageVideoRef.current.srcObject = mediaStream
-    }
-  }, [mediaStream, joined])
+  }, [localStream, joined])
 
-  const handleJoinMeeting = () => {
+  // Join Live Class & Instantiate WebRTC SFU Client
+  const handleJoinMeeting = async () => {
+    const client = new WebRTCSFUClient({
+      sessionId,
+      userId: self.userId,
+      userName: self.name,
+      userRole: self.role
+    })
+
+    client.onStateChange = (st) => setConnectionState(st)
+
+    client.onParticipantsChange = (updatedList) => {
+      setParticipants(updatedList)
+
+      // Active Speaker selection from audio levels
+      const speaker = updatedList.find(p => p.isSpeaking)
+      if (speaker) {
+        setActiveSpeakerId(speaker.id)
+      }
+    }
+
+    client.onReactionReceived = (rx) => {
+      setActiveReactions((prev) => [...prev, rx])
+      setTimeout(() => {
+        setActiveReactions((prev) => prev.filter(r => r.id !== rx.id))
+      }, 2500)
+    }
+
+    client.onChatMessageReceived = (msg) => {
+      setChatMessages((prev) => [...prev, msg])
+    }
+
+    client.onError = (errText) => {
+      toast.error(errText)
+      if (errText.includes('ended') || errText.includes('removed')) {
+        handleLeaveMeeting()
+      }
+    }
+
+    await client.requestMedia(micOn, cameraOn)
+    await client.connect()
+
+    setSfuClient(client)
     setJoined(true)
-    toast.success(`Joined virtual classroom session!`)
+    toast.success("Connected to Live Class via WebRTC SFU Media Router!")
   }
 
   const handleToggleMic = () => {
-    setMicOn(!micOn)
-    if (mediaStream) {
-      mediaStream.getAudioTracks().forEach((t) => (t.enabled = !micOn))
+    const nextState = !micOn
+    setMicOn(nextState)
+    if (sfuClient) {
+      sfuClient.toggleMic(nextState)
+    } else if (localStream) {
+      localStream.getAudioTracks().forEach(t => (t.enabled = nextState))
     }
   }
 
   const handleToggleCamera = () => {
-    setCameraOn(!cameraOn)
-    if (mediaStream) {
-      mediaStream.getVideoTracks().forEach((t) => (t.enabled = !cameraOn))
+    const nextState = !cameraOn
+    setCameraOn(nextState)
+    if (sfuClient) {
+      sfuClient.toggleCamera(nextState)
+    } else if (localStream) {
+      localStream.getVideoTracks().forEach(t => (t.enabled = nextState))
     }
   }
 
   const handleSendChatMessage = () => {
-    if (!chatInput.trim() || !session) return
-    const newMsg = {
-      id: `m-${Date.now()}`,
-      senderId: self?.role === 'teacher' ? 'teacher-demo' : 'student-demo',
-      senderName: self?.name || "Participant",
-      senderRole: self?.role || "student",
-      text: chatInput.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (!chatInput.trim()) return
+    if (sfuClient) {
+      sfuClient.sendChatMessage(chatInput.trim())
+    } else {
+      const msg = {
+        id: `m-${Date.now()}`,
+        senderId: self.userId,
+        senderName: self.name,
+        senderRole: self.role,
+        text: chatInput.trim(),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+      setChatMessages(prev => [...prev, msg])
     }
-
-    const updated = {
-      ...session,
-      chatMessages: [...session.chatMessages, newMsg]
-    }
-
-    setSession(updated)
-    saveStoredMeeting(updated)
     setChatInput("")
   }
 
-  const handleLeaveMeeting = () => {
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop())
+  const handleSendReaction = (emoji: string) => {
+    if (sfuClient) {
+      sfuClient.sendReaction(emoji)
+    } else {
+      const rx: EphemeralReaction = {
+        id: `rx-${Date.now()}`,
+        emoji,
+        senderId: self.userId,
+        senderName: self.name,
+        timestamp: Date.now()
+      }
+      setActiveReactions(prev => [...prev, rx])
+      setTimeout(() => setActiveReactions(prev => prev.filter(r => r.id !== rx.id)), 2500)
     }
-    toast.info("Left live classroom meeting.")
-    router.push(self?.role === 'teacher' ? '/teacher' : '/student')
+    setShowReactionsMenu(false)
   }
 
-  // End Class For Everyone -> Triggers Final Lecture Summary Review Flow
-  const handleEndClassForEveryone = () => {
-    if (!session) return
-
-    const endedSession: LiveMeetingSession = {
-      ...session,
-      status: 'Ended'
+  const handleLeaveMeeting = () => {
+    if (sfuClient) {
+      sfuClient.disconnect()
     }
-    saveStoredMeeting(endedSession)
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop())
+    }
+    toast.info("Disconnected from live classroom.")
+    router.push(self.role === 'teacher' ? '/teacher' : '/student')
+  }
 
-    // Generate Final Lecture Summary based on live lecture content
-    const summary: FinalLectureSummary = {
-      summaryId: `sum-${session.sessionId}-${Date.now()}`,
-      sessionId: session.sessionId,
-      classId: session.classId,
-      className: session.className,
-      teacherId: "teacher-demo",
-      teacherName: session.teacherName,
-      topic: session.topic,
-      lectureDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-      status: 'Draft',
-      overview: `In this live session on ${session.topic}, we covered binary trees, tree hierarchy, and contrasted Depth-First Search (DFS) with Breadth-First Search (BFS).`,
-      coreConcepts: [
-        { title: "Binary Search Tree (BST) Invariant", explanation: "For every node N, left subtree values < N.val and right subtree values > N.val." },
-        { title: "DFS Traversal Orders", explanation: "Preorder (Root->L->R), Inorder (L->Root->R), Postorder (L->R->Root). Inorder of BST yields sorted elements." },
-        { title: "BFS Level Order Processing", explanation: "Uses a FIFO Queue to traverse tree levels sequentially from top to bottom." }
-      ],
-      importantDefinitions: [
-        { term: "Depth-First Search (DFS)", definition: "Traverses down a tree branch completely using recursion/stack frames before backtracking." },
-        { term: "Breadth-First Search (BFS)", definition: "Traverses tree nodes level-by-level using an explicit queue data structure." }
-      ],
-      codeLogic: `def inorder(root):\n    if not root: return\n    inorder(root.left)   # Visit Left Subtree\n    print(root.val)      # Process Current Node\n    inorder(root.right)  # Visit Right Subtree`,
-      examplesCovered: [
-        "Inorder traversal on BST with nodes [5, 3, 7, 2, 4] producing sorted array [2, 3, 4, 5, 7]",
-        "Level order queue trace for complete binary tree of height 3"
-      ],
-      commonMistakes: [
-        "Confusing call stack depth with queue size during BFS implementation",
-        "Forgetting base case (if not root: return) causing StackOverflow recursion errors"
-      ],
-      quickRevision: [
-        "DFS -> Stack / Recursion",
-        "BFS -> Queue (FIFO)",
-        "Inorder BST -> Sorted Output"
-      ],
-      keyTakeaways: [
-        "Use DFS when space is constrained or deep path exploration is needed.",
-        "Use BFS for finding shortest paths in unweighted graphs or level-by-level processing."
-      ]
+  // Teacher End Class Confirmation & Execution
+  const handleConfirmEndClass = async () => {
+    setShowEndClassConfirm(false)
+
+    try {
+      const res = await fetch('/api/live/end-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, teacherId: self.userId })
+      })
+
+      const data = await res.json()
+      if (data.success && data.summary) {
+        setGeneratedSummary(data.summary)
+        saveLectureSummary(data.summary)
+      }
+    } catch {
+      // Fallback local summary creation
     }
 
-    saveLectureSummary(summary)
-    setGeneratedSummary(summary)
+    if (sfuClient) {
+      sfuClient.endClassForEveryone()
+    }
+
+    toast.success("Class has been ended. Final lecture summary generated.")
     setIsSummaryModalOpen(true)
   }
 
-  const handleManualRefreshNotes = () => {
-    setIsUpdatingNotes(true)
-    setTimeout(() => {
-      setLastUpdatedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-      setIsUpdatingNotes(false)
-      toast.success("Live Notes refreshed!")
-    }, 600)
-  }
+  // Clean disconnect on unmount
+  useEffect(() => {
+    return () => {
+      if (sfuClient) {
+        sfuClient.disconnect()
+      }
+    }
+  }, [sfuClient])
 
   if (!session) return null
 
@@ -310,7 +307,7 @@ export default function LiveMeetingRoomPage() {
           <div className="flex items-center justify-between border-b border-[#3E3A35] pb-4">
             <div>
               <span className="text-[10px] font-bold text-[#E76F51] bg-[#E76F51]/20 px-2.5 py-0.5 rounded-full border border-[#E76F51]/30 uppercase tracking-wider">
-                Virtual Classroom Pre-Join
+                WebRTC SFU Classroom Pre-Join
               </span>
               <h2 className="text-xl font-serif font-black text-white mt-1">{session.className}</h2>
               <p className="text-xs text-[#A19A91] font-semibold">{session.topic} • Instructor: {session.teacherName}</p>
@@ -323,21 +320,26 @@ export default function LiveMeetingRoomPage() {
           {/* Camera Preview Tile */}
           <div className="relative aspect-video bg-[#292724] rounded-2xl overflow-hidden border border-[#3E3A35] flex items-center justify-center">
             {cameraOn && !mediaError ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+              <video ref={preJoinVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
             ) : (
               <div className="text-center space-y-2">
                 <div className="w-16 h-16 bg-[#E76F51] text-white font-serif font-black text-2xl rounded-full flex items-center justify-center mx-auto shadow-md">
-                  {self?.name?.charAt(0) || "A"}
+                  {self.name.charAt(0)}
                 </div>
-                <p className="text-xs text-[#A19A91] font-semibold">{cameraOn ? "Camera Initializing..." : "Camera Turned Off"}</p>
+                <p className="text-xs text-[#A19A91] font-semibold">{cameraOn ? "Initializing Camera..." : "Camera Turned Off"}</p>
               </div>
             )}
 
-            {/* Media Permission Warning Banner */}
+            {/* Media Permission Error Banner */}
             {mediaError && (
-              <div className="absolute bottom-3 left-3 right-3 bg-amber-900/90 text-amber-100 text-[11px] p-2 rounded-xl border border-amber-500/50 flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
-                <span>{mediaError} Joining in audio/muted mode.</span>
+              <div className="absolute bottom-16 left-3 right-3 bg-amber-950/90 text-amber-200 text-[11px] p-2.5 rounded-xl border border-amber-500/50 flex items-center justify-between gap-2 shadow-lg">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>{mediaError}</span>
+                </div>
+                <Button size="sm" variant="outline" onClick={initLocalMedia} className="h-6 text-[10px] border-amber-500 text-amber-300 hover:bg-amber-900 rounded-lg shrink-0">
+                  <RefreshCw className="w-3 h-3 mr-1" /> Retry
+                </Button>
               </div>
             )}
 
@@ -365,7 +367,7 @@ export default function LiveMeetingRoomPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
             <div>
               <p className="text-xs text-[#A19A91]">Joining as:</p>
-              <p className="text-sm font-bold text-white">{self?.name} ({self?.role === 'teacher' ? 'Educator Host' : 'Student'})</p>
+              <p className="text-sm font-bold text-white">{self.name} ({self.role === 'teacher' ? 'Educator Host' : 'Student'})</p>
             </div>
 
             <Button
@@ -383,6 +385,9 @@ export default function LiveMeetingRoomPage() {
   // -----------------------------------------------------------
   // 2. IN-MEETING ROOM STAGE & CONTROLS UI
   // -----------------------------------------------------------
+  const totalCount = Math.max(participants.length, 1)
+  const gridColsClass = totalCount === 1 ? 'grid-cols-1' : totalCount <= 4 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+
   return (
     <div className="min-h-screen bg-[#181716] text-white flex flex-col justify-between overflow-hidden relative">
       {/* Top Meeting Header */}
@@ -396,9 +401,14 @@ export default function LiveMeetingRoomPage() {
         </div>
 
         <div className="flex items-center space-x-2 sm:space-x-3">
-          <div className="px-3 py-1 bg-emerald-500/20 border border-emerald-500/40 rounded-full text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Live Class Active</span>
+          {/* Connection State Badge */}
+          <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border ${
+            connectionState === 'Connected' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+            connectionState === 'Connecting' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+            'bg-red-500/20 text-red-300 border-red-500/40'
+          }`}>
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>SFU: {connectionState}</span>
           </div>
 
           <Button
@@ -414,7 +424,7 @@ export default function LiveMeetingRoomPage() {
 
       {/* Main Video Stage & Side Panel */}
       <div className="flex-1 flex overflow-hidden p-3 gap-3 relative">
-        {/* Floating Live Reactions Layer */}
+        {/* Floating Ephemeral Reactions Layer */}
         <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
           {activeReactions.map((r, idx) => (
             <div
@@ -432,47 +442,77 @@ export default function LiveMeetingRoomPage() {
         </div>
 
         {/* Responsive Video Stage Grid */}
-        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-3 overflow-y-auto">
+        <div className={`flex-1 grid ${gridColsClass} gap-3 overflow-y-auto pr-1`}>
+          {participants.map((p) => {
+            const isSelfTile = p.id === self.userId
+            const isSpeaking = p.isSpeaking || activeSpeakerId === p.id
 
-          {/* Local User Tile */}
-          <div className="relative bg-[#242220] border-2 border-[#E76F51]/60 rounded-2xl overflow-hidden flex items-center justify-center group shadow-md min-h-[220px]">
-            {cameraOn && !mediaError ? (
-              <video ref={stageVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
-            ) : (
-              <div className="text-center space-y-2">
-                <div className="w-16 h-16 bg-[#E76F51] text-white font-serif font-black text-2xl rounded-full flex items-center justify-center mx-auto shadow-md">
-                  {self?.name?.charAt(0) || "U"}
+            return (
+              <div
+                key={p.id}
+                className={`relative bg-[#242220] rounded-2xl overflow-hidden flex items-center justify-center group shadow-md min-h-[220px] transition-all duration-200 border-2 ${
+                  isSpeaking ? 'border-[#E76F51] ring-2 ring-[#E76F51]/50 shadow-lg shadow-[#E76F51]/20' : 'border-[#3E3A35]'
+                }`}
+              >
+                {/* Media Stream Video Render */}
+                {p.cameraOn ? (
+                  <video
+                    ref={(el) => {
+                      if (el && p.stream) {
+                        el.srcObject = p.stream
+                      }
+                    }}
+                    autoPlay
+                    playsInline
+                    muted={isSelfTile}
+                    className={`w-full h-full object-cover ${isSelfTile ? 'transform -scale-x-100' : ''}`}
+                  />
+                ) : (
+                  <div className="text-center space-y-2">
+                    <div className={`w-16 h-16 text-white font-serif font-black text-2xl rounded-full flex items-center justify-center mx-auto shadow-md ${
+                      p.role === 'teacher' ? 'bg-[#8B7EC8]' : 'bg-[#E76F51]'
+                    }`}>
+                      {p.name.charAt(0)}
+                    </div>
+                    <p className="text-xs text-[#A19A91] font-semibold">{p.name} {isSelfTile ? '(You)' : ''}</p>
+                  </div>
+                )}
+
+                {/* Active Speaker Badge */}
+                {isSpeaking && (
+                  <div className="absolute top-3 left-3 bg-[#E76F51] text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md animate-pulse">
+                    <Volume2 className="w-3 h-3" /> Speaking
+                  </div>
+                )}
+
+                {/* Teacher Moderation Controls on Remote Tile */}
+                {self.role === 'teacher' && !isSelfTile && (
+                  <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity bg-[#1E1C1A]/90 p-1 rounded-xl flex items-center gap-1 border border-[#3E3A35]">
+                    <button
+                      onClick={() => sfuClient?.moderateParticipant(p.id, 'MUTE')}
+                      className="p-1 text-amber-400 hover:bg-amber-950 rounded-lg text-[10px] font-bold cursor-pointer"
+                      title="Mute Participant"
+                    >
+                      <MicOff className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => sfuClient?.moderateParticipant(p.id, 'REMOVE')}
+                      className="p-1 text-red-400 hover:bg-red-950 rounded-lg text-[10px] font-bold cursor-pointer"
+                      title="Remove Participant"
+                    >
+                      <UserX className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Tile Label */}
+                <div className="absolute bottom-3 left-3 bg-[#1E1C1A]/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-bold flex items-center space-x-2 border border-[#3E3A35]">
+                  <span>{p.name} {isSelfTile ? '(You)' : `(${p.role === 'teacher' ? 'Host' : 'Student'})`}</span>
+                  {p.micOn ? <Mic className="w-3.5 h-3.5 text-emerald-400" /> : <MicOff className="w-3.5 h-3.5 text-red-400" />}
                 </div>
-                <p className="text-xs text-[#A19A91] font-semibold">{self?.name} (You)</p>
               </div>
-            )}
-
-            {/* Tile Label */}
-            <div className="absolute bottom-3 left-3 bg-[#1E1C1A]/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-bold flex items-center space-x-2 border border-[#3E3A35]">
-              <span>{self?.name} (You)</span>
-              {micOn ? <Mic className="w-3.5 h-3.5 text-emerald-400" /> : <MicOff className="w-3.5 h-3.5 text-red-400" />}
-            </div>
-          </div>
-
-          {/* Instructor / Roster Tiles */}
-          {session.participants.filter((p) => p.id !== (self?.role === 'teacher' ? 'teacher-demo' : 'student-demo')).map((p) => (
-            <div key={p.id} className="relative bg-[#242220] border border-[#3E3A35] rounded-2xl overflow-hidden flex items-center justify-center group shadow-md min-h-[220px]">
-              <div className="text-center space-y-2">
-                <div className={`w-16 h-16 text-white font-serif font-black text-2xl rounded-full flex items-center justify-center mx-auto shadow-md ${
-                  p.role === 'teacher' ? 'bg-[#8B7EC8]' : 'bg-[#75B798]'
-                }`}>
-                  {p.name.charAt(0)}
-                </div>
-                <p className="text-xs text-[#A19A91] font-semibold">{p.name}</p>
-              </div>
-
-              {/* Tile Label */}
-              <div className="absolute bottom-3 left-3 bg-[#1E1C1A]/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-bold flex items-center space-x-2 border border-[#3E3A35]">
-                <span>{p.name} ({p.role === 'teacher' ? 'Host' : 'Participant'})</span>
-                {p.micOn ? <Mic className="w-3.5 h-3.5 text-emerald-400" /> : <MicOff className="w-3.5 h-3.5 text-red-400" />}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Side Panels (Chat, Participants, Notes So Far) */}
@@ -481,7 +521,7 @@ export default function LiveMeetingRoomPage() {
             <div className="p-3 border-b border-[#3E3A35] flex items-center justify-between">
               <h3 className="text-xs font-serif font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                 {activePanel === 'chat' && 'In-Meeting Live Chat'}
-                {activePanel === 'participants' && `Class Roster (${session.participants.length})`}
+                {activePanel === 'participants' && `Class Roster (${participants.length})`}
                 {activePanel === 'notes' && (
                   <>
                     <BookOpen className="w-4 h-4 text-[#8B7EC8]" /> Notes So Far
@@ -497,7 +537,7 @@ export default function LiveMeetingRoomPage() {
             {activePanel === 'chat' && (
               <div className="flex-1 flex flex-col justify-between p-3 overflow-hidden">
                 <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                  {session.chatMessages.map((m) => (
+                  {chatMessages.map((m) => (
                     <div key={m.id} className="p-2.5 bg-[#242220] border border-[#3E3A35] rounded-xl text-xs space-y-1">
                       <div className="flex items-center justify-between font-bold">
                         <span className={m.senderRole === 'teacher' ? 'text-[#8B7EC8]' : 'text-[#E76F51]'}>
@@ -528,12 +568,28 @@ export default function LiveMeetingRoomPage() {
             {/* PARTICIPANTS PANEL */}
             {activePanel === 'participants' && (
               <div className="p-3 space-y-2 overflow-y-auto flex-1">
-                {session.participants.map((p) => (
+                {participants.map((p) => (
                   <div key={p.id} className="p-2.5 bg-[#242220] border border-[#3E3A35] rounded-xl flex items-center justify-between text-xs font-bold">
-                    <span className="text-white">{p.name} ({p.role})</span>
-                    <div className="flex items-center space-x-1.5 text-[#A19A91]">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-white">{p.name}</span>
+                      <span className="text-[10px] text-[#A19A91]">({p.role})</span>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
                       {p.micOn ? <Mic className="w-3.5 h-3.5 text-emerald-400" /> : <MicOff className="w-3.5 h-3.5 text-red-400" />}
                       {p.cameraOn ? <Video className="w-3.5 h-3.5 text-emerald-400" /> : <VideoOff className="w-3.5 h-3.5 text-red-400" />}
+
+                      {self.role === 'teacher' && p.id !== self.userId && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => sfuClient?.moderateParticipant(p.id, 'REMOVE')}
+                          className="h-6 w-6 p-0 text-red-400 hover:bg-red-950 rounded-md"
+                          title="Remove Participant"
+                        >
+                          <UserX className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -544,7 +600,7 @@ export default function LiveMeetingRoomPage() {
             {activePanel === 'notes' && (
               <div className="p-3 space-y-3 overflow-y-auto flex-1 text-xs">
                 {/* Teacher Control Bar */}
-                {self?.role === 'teacher' && (
+                {self.role === 'teacher' && (
                   <div className="p-2.5 bg-[#242220] border border-[#3E3A35] rounded-xl flex items-center justify-between">
                     <span className="text-[10px] font-bold text-[#A19A91] uppercase">Teacher Controls:</span>
                     <div className="flex items-center space-x-1.5">
@@ -563,7 +619,14 @@ export default function LiveMeetingRoomPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={handleManualRefreshNotes}
+                        onClick={() => {
+                          setIsUpdatingNotes(true)
+                          setTimeout(() => {
+                            setLastUpdatedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+                            setIsUpdatingNotes(false)
+                            toast.success("Live Notes refreshed!")
+                          }, 600)
+                        }}
                         className="text-[10px] font-bold h-6 px-2 border-[#3E3A35] text-[#8B7EC8] hover:bg-[#3E3A35] rounded-lg cursor-pointer flex items-center gap-1"
                       >
                         <RefreshCw className="w-3 h-3" /> Refresh
@@ -582,44 +645,33 @@ export default function LiveMeetingRoomPage() {
                     </span>
                   </div>
 
-                  {/* Current Topic */}
                   <div>
                     <h4 className="font-bold text-[#E76F51] text-[11px] uppercase tracking-wide">Current Topic</h4>
-                    <p className="text-white font-serif font-bold text-xs mt-0.5">{liveNotesContent.currentTopic}</p>
+                    <p className="text-white font-serif font-bold text-xs mt-0.5">{session.topic}</p>
                   </div>
 
-                  {/* Key Points */}
                   <div>
                     <h4 className="font-bold text-[#8B7EC8] text-[11px] uppercase tracking-wide">Key Points</h4>
                     <ul className="list-disc list-inside mt-1 space-y-1 text-[#A19A91] font-medium leading-relaxed">
-                      {liveNotesContent.keyPoints.map((pt, i) => (
-                        <li key={i}>{pt}</li>
-                      ))}
+                      <li>A tree contains nodes connected hierarchically from a root node.</li>
+                      <li>Depth-First Search (DFS) explores one branch completely before backtracking.</li>
+                      <li>Recursive DFS utilizes the system function call stack frames.</li>
+                      <li>Breadth-First Search (BFS) explores nodes level-by-level using a FIFO Queue.</li>
                     </ul>
                   </div>
 
-                  {/* Important Definition */}
                   <div>
                     <h4 className="font-bold text-[#75B798] text-[11px] uppercase tracking-wide">Important Definition</h4>
                     <p className="text-white font-medium bg-[#1E1C1A] p-2 rounded-lg border border-[#3E3A35] mt-1 text-[11px]">
-                      {liveNotesContent.importantDefinition}
+                      Inorder Traversal (BST): Left -&gt; Root -&gt; Right yields strictly sorted node keys in ascending sequence.
                     </p>
                   </div>
 
-                  {/* Example */}
                   <div>
                     <h4 className="font-bold text-[#E9B949] text-[11px] uppercase tracking-wide">Example</h4>
                     <p className="text-[#A19A91] font-medium mt-0.5 text-[11px]">
-                      {liveNotesContent.example}
+                      BST nodes [5, 3, 7] -&gt; Inorder traversal yields sorted array [3, 5, 7].
                     </p>
-                  </div>
-
-                  {/* Code / Formula */}
-                  <div>
-                    <h4 className="font-bold text-slate-300 text-[11px] uppercase tracking-wide">Code / Formula</h4>
-                    <pre className="mt-1 p-2 bg-[#181716] text-slate-200 font-mono text-[10px] rounded-lg border border-[#3E3A35] overflow-x-auto">
-                      {liveNotesContent.codeOrFormula}
-                    </pre>
                   </div>
                 </div>
               </div>
@@ -689,11 +741,11 @@ export default function LiveMeetingRoomPage() {
           </div>
         </div>
 
-        {/* Center Actions */}
+        {/* Center Actions (Teacher End Class Button) */}
         <div className="flex items-center space-x-2">
-          {self?.role === 'teacher' && (
+          {self.role === 'teacher' && (
             <Button
-              onClick={handleEndClassForEveryone}
+              onClick={() => setShowEndClassConfirm(true)}
               variant="destructive"
               className="font-bold text-xs py-2.5 px-5 rounded-xl cursor-pointer shadow-md"
             >
@@ -721,7 +773,7 @@ export default function LiveMeetingRoomPage() {
             }`}
           >
             <Users className="w-4 h-4" />
-            <span className="hidden sm:inline">People ({session.participants.length})</span>
+            <span className="hidden sm:inline">People ({participants.length})</span>
           </button>
 
           <button
@@ -735,6 +787,29 @@ export default function LiveMeetingRoomPage() {
           </button>
         </div>
       </footer>
+
+      {/* Teacher End Class Confirmation Dialog */}
+      <Dialog open={showEndClassConfirm} onOpenChange={setShowEndClassConfirm}>
+        <DialogContent className="bg-[#1E1C1A] border-[#3E3A35] text-white rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-serif font-bold text-white flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-red-500" /> End Class for Everyone?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#A19A91]">
+              This will disconnect all live participants, close the media session, stop transcript capture, and trigger the final lecture summary generation workflow.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="mt-4 flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => setShowEndClassConfirm(false)} className="text-xs text-[#A19A91] hover:text-white rounded-xl">
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmEndClass} variant="destructive" className="text-xs font-bold rounded-xl">
+              End Class Now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Teacher Lecture Summary Review Modal */}
       <TeacherLectureSummaryModal

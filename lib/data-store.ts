@@ -241,6 +241,7 @@ export interface LiveSessionData {
   classId: string
   className: string
   topic: string
+  teacherName?: string
   status: 'Live' | 'Paused' | 'Ended'
   startedAt: string
   confusionSignalsCount: number
