@@ -607,13 +607,8 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
       )}
 
       <div className="flex flex-1 overflow-hidden z-10">
-        {/* Desktop Sidebar */}
-        <aside className="w-64 border-r border-[#E5DCD0] bg-[#FFF9F1]/85 backdrop-blur-md p-5 hidden lg:flex flex-col justify-between overflow-y-auto">
-          <RenderSidebarContent />
-        </aside>
-
-        {/* Main Command Center */}
-        <main className="flex-1 p-4 sm:p-8 overflow-y-auto space-y-6">
+        {/* Main Command Center (Full Width, Hidden Sidebar by Default) */}
+        <main className="flex-1 p-4 sm:p-8 overflow-y-auto space-y-6 max-w-7xl mx-auto w-full">
           {/* Header Greeting & Active Classroom Pill */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#FFF9F1]/90 backdrop-blur-md p-5 rounded-2xl border border-[#E5DCD0] shadow-sm">
             <div>
@@ -764,23 +759,23 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
           )}
 
           <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 max-w-4xl bg-[#F1E8DD] p-1 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1">
-              <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
+            <TabsList className="flex overflow-x-auto w-full max-w-4xl bg-[#F1E8DD] p-1.5 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1 sm:gap-1.5 scrollbar-none">
+              <TabsTrigger value="overview" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Overview
               </TabsTrigger>
-              <TabsTrigger value="leaderboard" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-amber-600 font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
+              <TabsTrigger value="leaderboard" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-amber-600 data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Mastery League
               </TabsTrigger>
-              <TabsTrigger value="students" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#8B7EC8] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
+              <TabsTrigger value="students" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#8B7EC8] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Roster
               </TabsTrigger>
-              <TabsTrigger value="submissions" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
+              <TabsTrigger value="submissions" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Submissions
               </TabsTrigger>
-              <TabsTrigger value="quizzes" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
+              <TabsTrigger value="quizzes" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Quizzes
               </TabsTrigger>
-              <TabsTrigger value="analytics" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#75B798] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
+              <TabsTrigger value="analytics" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#75B798] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Analytics
               </TabsTrigger>
             </TabsList>
