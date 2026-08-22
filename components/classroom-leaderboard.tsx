@@ -5,11 +5,10 @@ import {
   Trophy,
   ChevronRight,
   Info,
-  X,
-  Flame
+  X
 } from "lucide-react"
 import { getClassroomLeaderboardServer } from "@/actions/intelligence/action"
-import { StudentLeaderboardEntry, RisingLearnerEntry } from "@/lib/mastery-engine"
+import { StudentLeaderboardEntry } from "@/lib/mastery-engine"
 
 interface ClassroomLeaderboardProps {
   classId: string
@@ -19,7 +18,6 @@ interface ClassroomLeaderboardProps {
 export function ClassroomLeaderboard({ classId, currentStudentId = "student-demo" }: ClassroomLeaderboardProps) {
   const [loading, setLoading] = useState<boolean>(true)
   const [top5, setTop5] = useState<StudentLeaderboardEntry[]>([])
-  const [risingLearners, setRisingLearners] = useState<RisingLearnerEntry[]>([])
   const [currentStudentEntry, setCurrentStudentEntry] = useState<StudentLeaderboardEntry | undefined>()
   const [totalEnrolled, setTotalEnrolled] = useState<number>(0)
   const [selectedEntry, setSelectedEntry] = useState<StudentLeaderboardEntry | null>(null)
@@ -30,7 +28,6 @@ export function ClassroomLeaderboard({ classId, currentStudentId = "student-demo
       const res = await getClassroomLeaderboardServer(classId, currentStudentId)
       if (res.success) {
         setTop5(res.top5 || [])
-        setRisingLearners(res.risingLearners || [])
         setCurrentStudentEntry(res.currentStudentEntry)
         setTotalEnrolled(res.totalEnrolled || 0)
       }
@@ -199,51 +196,21 @@ export function ClassroomLeaderboard({ classId, currentStudentId = "student-demo
             )}
           </div>
 
-          {/* RISING LEARNERS & LEADERBOARD RULES */}
+          {/* LEADERBOARD CALCULATION RULES */}
           <div className="space-y-6">
-            {/* Rising Learners Box */}
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 p-5 rounded-2xl shadow-xs space-y-3">
-              <div className="flex items-center gap-2 text-stone-900 dark:text-stone-100 font-bold text-sm border-b border-stone-100 dark:border-stone-800 pb-2.5">
-                <Flame className="w-4 h-4 text-rose-500" /> Rising Learners (Most Improved)
-              </div>
-
-              {risingLearners.length === 0 ? (
-                <div className="p-4 text-center text-xs text-stone-400">
-                  Not enough learning history yet to compute improvement trends.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {risingLearners.map((rl) => (
-                    <div
-                      key={rl.studentId}
-                      className="p-3 bg-stone-50 dark:bg-stone-800/40 rounded-xl border border-stone-200 dark:border-stone-800 flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <div className="font-bold text-stone-900 dark:text-stone-100">{rl.studentName}</div>
-                        <div className="text-[10px] text-stone-500">{rl.conceptName}</div>
-                      </div>
-                      <div className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs border border-emerald-500/20">
-                        +{rl.scoreImprovement}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Transparent Calculation Breakdown Explanation Box */}
-            <div className="bg-stone-50 dark:bg-stone-800/30 border border-stone-200 dark:border-stone-800 p-5 rounded-2xl space-y-2 text-xs text-stone-600 dark:text-stone-400">
-              <div className="font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5 mb-1">
-                <Info className="w-4 h-4 text-[#E76F51]" /> How Score is Calculated
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 p-6 rounded-2xl shadow-xs space-y-3 text-xs text-stone-600 dark:text-stone-400">
+              <div className="font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5 mb-1 text-sm border-b border-stone-100 dark:border-stone-800 pb-2.5">
+                <Info className="w-4.5 h-4.5 text-[#E76F51]" /> How Score is Calculated
               </div>
-              <ul className="space-y-1 pl-4 list-disc text-[11px]">
+              <ul className="space-y-2 pl-4 list-disc text-xs">
                 <li><strong>Quizzes (30%)</strong>: Accuracy on timed objective quizzes</li>
                 <li><strong>Assignments (25%)</strong>: Evaluated written submissions</li>
                 <li><strong>Spoken Viva (25%)</strong>: Verified verbal reasoning depth</li>
                 <li><strong>Improvement (15%)</strong>: Positive trend across attempts</li>
                 <li><strong>Consistency (5%)</strong>: Regular activity participation</li>
               </ul>
-              <p className="text-[10px] text-stone-400 pt-1 border-t border-stone-200 dark:border-stone-700">
+              <p className="text-[11px] text-stone-400 pt-2 border-t border-stone-100 dark:border-stone-800">
                 Weights normalize dynamically if optional evidence is pending.
               </p>
             </div>

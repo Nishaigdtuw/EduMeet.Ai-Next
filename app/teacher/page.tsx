@@ -28,7 +28,6 @@ import { UploadMaterialModal } from "@/components/upload-material-modal"
 import { TeacherReviewModal } from "@/components/teacher-review-modal"
 import { TeacherQuizModal } from "@/components/teacher-quiz-modal"
 import { QuizAttemptsModal } from "@/components/quiz-attempts-modal"
-import { TeacherClassUnderstanding } from "@/components/teacher-class-understanding"
 import { ClassroomLeaderboard } from "@/components/classroom-leaderboard"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -484,10 +483,10 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
       {/* Header Bar */}
       <header className="flex justify-between items-center px-4 sm:px-8 py-3.5 bg-[#FFF9F1]/95 backdrop-blur-md border-b border-[#E5DCD0] sticky top-0 z-50 shadow-2xs">
         <div className="flex items-center space-x-3">
-          {/* Mobile Drawer Trigger */}
+          {/* Sidebar Drawer Trigger */}
           <Sheet open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden text-[#292724] hover:bg-[#F1E8DD]/60">
+              <Button variant="ghost" size="icon" aria-label="Open Navigation Menu" title="Navigation Menu" className="text-[#292724] hover:bg-[#F1E8DD]/60 cursor-pointer">
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>
@@ -517,7 +516,6 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
             className="border-[#8B7EC8] bg-[#FFF9F1] text-[#8B7EC8] hover:bg-[#8B7EC8]/10 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <HelpCircle className="w-4 h-4 text-[#8B7EC8]" /> AI Assistant Help
-
           </Button>
 
           {/* Notifications Drawer Trigger */}
@@ -531,9 +529,12 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
             <span className="absolute top-1 right-1 w-2 h-2 bg-[#E76F51] rounded-full animate-ping" />
           </Button>
 
+          {/* Premium Upgrade Crown Icon Button */}
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
+            aria-label="Upgrade"
+            title="Upgrade"
             className={`border-[#E5DCD0] font-bold text-xs rounded-xl hover:-translate-y-0.5 transition-all duration-200 cursor-pointer ${
               isPro(subscription)
                 ? "bg-[#E9B949]/20 text-[#8B7EC8] border-[#E9B949]"
@@ -541,7 +542,7 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
             }`}
             onClick={() => setPricingOpen(true)}
           >
-            <Crown className="w-3.5 h-3.5 mr-1.5 text-[#E9B949]" /> {isPro(subscription) ? "AULYN Teacher Pro" : "Pro Educator"}
+            <Crown className="w-4 h-4 text-[#E9B949]" />
           </Button>
 
           <Button
@@ -763,12 +764,9 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
           )}
 
           <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 max-w-4xl bg-[#F1E8DD] p-1 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1">
+            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 max-w-4xl bg-[#F1E8DD] p-1 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1">
               <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Overview
-              </TabsTrigger>
-              <TabsTrigger value="understanding" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Class Intelligence
               </TabsTrigger>
               <TabsTrigger value="leaderboard" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-amber-600 font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Mastery League
@@ -833,7 +831,7 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
               </Card>
 
               {/* Summary Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card className="bg-[#FFF9F1]/95 backdrop-blur-md border-[#E5DCD0] shadow-2xs rounded-2xl">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-xs font-bold text-[#292724] uppercase tracking-wider">Enrolled Students</CardTitle>
@@ -867,20 +865,6 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
                         if (scored.length === 0) return "No quiz attempts yet"
                         return `Calculated from ${scored.length} student attempt(s)`
                       })()}
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-[#FFF9F1]/95 backdrop-blur-md border-[#E5DCD0] shadow-2xs rounded-2xl">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-[#292724] uppercase tracking-wider">Submissions Received</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-serif font-bold text-[#E76F51]">
-                      {studentSubmissions.filter((s) => s.classId === activeClassroom?.classId).length} Received
-                    </div>
-                    <p className="text-xs text-[#77716A] font-semibold mt-1">
-                      {studentSubmissions.filter((s) => s.classId === activeClassroom?.classId).length ? "Real-time student submissions" : "No submissions yet"}
                     </p>
                   </CardContent>
                 </Card>
@@ -926,18 +910,6 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
                   )}
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            {/* CLASSROOM LEARNING INTELLIGENCE TAB */}
-            <TabsContent value="understanding" className="space-y-6 animate-in fade-in-50 duration-200">
-              <TeacherClassUnderstanding
-                classId={activeClassroom?.classId || "class-1"}
-                onCreateQuizForConcept={(conceptName) => {
-                  setActiveMainTab("quizzes")
-                  toast.info(`Switched to Quizzes tab. Generate a quiz for: ${conceptName}`)
-                }}
-                onOpenLiveSession={() => setLiveSessionOpen(true)}
-              />
             </TabsContent>
 
             {/* CLASSROOM MASTERY LEAGUE TAB */}

@@ -1,9 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { FileText, Download, ArrowUpRight, Menu, LogOut, ChevronDown, ChevronRight, Settings, LayoutDashboard, FolderOpen, Eye, Bell, User, Save, BookOpen, Award, ArrowLeft, RefreshCw, HelpCircle, Plus, MessageSquare, CheckSquare, Layers, Timer, Crown } from "lucide-react"
-
-
+import { FileText, Download, ArrowUpRight, Menu, LogOut, ChevronDown, ChevronRight, Settings, LayoutDashboard, FolderOpen, Eye, Bell, User, Save, BookOpen, ArrowLeft, RefreshCw, HelpCircle, Plus, MessageSquare, Crown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -28,7 +26,6 @@ import { AssignmentSubmissionModal } from "@/components/assignment-submission-mo
 import { StudentNotesAI } from "@/components/student-notes-ai"
 import { StudentLectureSummaryModal } from "@/components/student-lecture-summary-modal"
 import { ExamInterfaceModal } from "@/components/exam-interface-modal"
-import { StudentUnderstandingGraph } from "@/components/student-understanding-graph"
 import { ClassroomLeaderboard } from "@/components/classroom-leaderboard"
 
 import { DoubtThreadsModal } from "@/components/doubt-threads-modal"
@@ -433,33 +430,6 @@ export default function StudentPortal() {
             <FolderOpen className="w-4 h-4 mr-2.5 text-[#8B7EC8]" /> Code Trace Visualizer
           </button>
 
-          {/* Practical Assessment */}
-          <div>
-            <button
-              onClick={() => toggleSection("practice")}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl font-bold text-[#77716A] hover:bg-[#F1E8DD]/40 hover:text-[#292724] transition-all duration-200 cursor-pointer"
-            >
-              <span className="flex items-center">
-                <Award className="w-4 h-4 mr-2.5 text-[#75B798]" /> Practical Assessment
-              </span>
-              {expandedSections.practice ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-            </button>
-
-            {expandedSections.practice && (
-              <div className="ml-4 pl-2 border-l border-[#E5DCD0] space-y-1 mt-1">
-                <button onClick={() => { setQuizModalOpen(true); setMobileDrawerOpen(false) }} className="w-full text-left px-2.5 py-1.5 text-xs text-[#77716A] hover:text-[#292724] font-semibold transition-colors cursor-pointer flex items-center">
-                  <CheckSquare className="w-3.5 h-3.5 mr-1.5 text-[#E76F51]" /> Chapter Quiz
-                </button>
-                <button onClick={() => { setFlashcardsModalOpen(true); setMobileDrawerOpen(false) }} className="w-full text-left px-2.5 py-1.5 text-xs text-[#77716A] hover:text-[#292724] font-semibold transition-colors cursor-pointer flex items-center">
-                  <Layers className="w-3.5 h-3.5 mr-1.5 text-[#8B7EC8]" /> 3D Flashcards
-                </button>
-                <button onClick={() => { setMockTestModalOpen(true); setMobileDrawerOpen(false) }} className="w-full text-left px-2.5 py-1.5 text-xs text-[#77716A] hover:text-[#292724] font-semibold transition-colors cursor-pointer flex items-center">
-                  <Timer className="w-3.5 h-3.5 mr-1.5 text-[#75B798]" /> Timed Mock Examination
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* Doubt Threads */}
           <button
             onClick={() => { setDoubtThreadsOpen(true); setMobileDrawerOpen(false) }}
@@ -516,10 +486,10 @@ export default function StudentPortal() {
       {/* Header Bar */}
       <header className="flex justify-between items-center px-4 sm:px-8 py-3.5 bg-[#FFF9F1]/95 backdrop-blur-md border-b border-[#E5DCD0] sticky top-0 z-50 shadow-2xs">
         <div className="flex items-center space-x-3">
-          {/* Mobile Drawer Trigger */}
+          {/* Sidebar Drawer Trigger */}
           <Sheet open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden text-[#292724] hover:bg-[#F1E8DD]/60">
+              <Button variant="ghost" size="icon" aria-label="Open Navigation Menu" title="Navigation Menu" className="text-[#292724] hover:bg-[#F1E8DD]/60 cursor-pointer">
                 <Menu className="w-5 h-5" />
               </Button>
             </SheetTrigger>
@@ -549,9 +519,7 @@ export default function StudentPortal() {
             className="border-[#8B7EC8] bg-[#FFF9F1] text-[#8B7EC8] hover:bg-[#8B7EC8]/10 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <HelpCircle className="w-4 h-4 text-[#8B7EC8]" /> AI Assistant Help
-
           </Button>
-
 
           {/* Notifications Drawer Trigger */}
           <Button
@@ -564,9 +532,12 @@ export default function StudentPortal() {
             <span className="absolute top-1 right-1 w-2 h-2 bg-[#E76F51] rounded-full animate-ping" />
           </Button>
 
+          {/* Premium Upgrade Crown Icon Button */}
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
+            aria-label="Upgrade"
+            title="Upgrade"
             className={`border-[#E5DCD0] font-bold text-xs rounded-xl hover:-translate-y-0.5 transition-all duration-200 cursor-pointer ${
               isPro(subscription)
                 ? "bg-[#E9B949]/20 text-[#8B7EC8] border-[#E9B949]"
@@ -574,7 +545,7 @@ export default function StudentPortal() {
             }`}
             onClick={() => setPricingOpen(true)}
           >
-            <Crown className="w-3.5 h-3.5 mr-1.5 text-[#E9B949]" /> {isPro(subscription) ? "AULYN Student Pro" : "Upgrade to Pro"}
+            <Crown className="w-4 h-4 text-[#E9B949]" />
           </Button>
 
           <Button
@@ -744,12 +715,9 @@ export default function StudentPortal() {
           </div>
 
           <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 max-w-4xl bg-[#F1E8DD] p-1 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1">
+            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 max-w-4xl bg-[#F1E8DD] p-1 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1">
               <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Overview
-              </TabsTrigger>
-              <TabsTrigger value="understanding" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Understanding Map
               </TabsTrigger>
               <TabsTrigger value="leaderboard" className="rounded-lg data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-amber-600 font-bold text-xs data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
                 Leaderboard
@@ -895,17 +863,6 @@ export default function StudentPortal() {
                   )}
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            {/* STUDENT UNDERSTANDING GRAPH TAB */}
-            <TabsContent value="understanding" className="space-y-6 animate-in fade-in-50 duration-200">
-              <StudentUnderstandingGraph
-                studentId={self?.userId || "student-demo"}
-                classId={activeClassroom?.classId || "class-1"}
-                onOpenVisualizer={() => setActiveMainTab("visualizer")}
-                onOpenViva={() => setAiVivaOpen(true)}
-                onOpenPractice={() => setAdaptiveQuizOpen(true)}
-              />
             </TabsContent>
 
             {/* CLASSROOM LEADERBOARD TAB */}
