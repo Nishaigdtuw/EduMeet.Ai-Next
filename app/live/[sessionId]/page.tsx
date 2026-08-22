@@ -45,7 +45,7 @@ export default function LiveMeetingRoomPage() {
     role: 'student'
   })
 
-  const [session, setSession] = useState<LiveMeetingSession | null>(null)
+  const [session, setSession] = useState<LiveMeetingSession>(() => getStoredMeeting(sessionId))
   const [sfuClient, setSfuClient] = useState<WebRTCSFUClient | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionState>('Connecting')
   const [copiedMeetingId, setCopiedMeetingId] = useState(false)

@@ -68,54 +68,105 @@ export async function requestMediaStream(audio: boolean, video: boolean): Promis
   }
 }
 
-export function getStoredMeeting(sessionId: string): LiveMeetingSession | null {
-  if (typeof window === "undefined") return null
-  const str = localStorage.getItem(`${LIVE_MEETINGS_KEY}_${sessionId}`)
-  if (str) {
-    try {
-      return JSON.parse(str)
-    } catch {
-      // Fallback
-    }
-  }
-
-  // Check if mapping exists by meetingId
-  const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
-  if (mapStr) {
-    try {
-      const map: Record<string, string> = JSON.parse(mapStr)
-      // Check if argument passed was actually a meetingId
-      const mappedSessionId = map[sessionId.toUpperCase()]
-      if (mappedSessionId) {
-        const mappedStr = localStorage.getItem(`${LIVE_MEETINGS_KEY}_${mappedSessionId}`)
-        if (mappedStr) return JSON.parse(mappedStr)
+export function getStoredMeeting(sessionId: string): LiveMeetingSession {
+  if (typeof window !== "undefined") {
+    const str = localStorage.getItem(`${LIVE_MEETINGS_KEY}_${sessionId}`)
+    if (str) {
+      try {
+        return JSON.parse(str)
+      } catch {
+        // Fallback
       }
-    } catch {
-      // ignore
+    }
+
+    // Check if mapping exists by meetingId
+    const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
+    if (mapStr) {
+      try {
+        const map: Record<string, string> = JSON.parse(mapStr)
+        const mappedSessionId = map[sessionId.toUpperCase()]
+        if (mappedSessionId) {
+          const mappedStr = localStorage.getItem(`${LIVE_MEETINGS_KEY}_${mappedSessionId}`)
+          if (mappedStr) return JSON.parse(mappedStr)
+        }
+      } catch {
+        // ignore
+      }
     }
   }
 
-  return null
+  // Extract or generate meetingId from sessionId (e.g., sess-AULYN-CS-6V9Q-1787425295588 -> AULYN-CS-6V9Q)
+  let extractedMeetingId = generateMeetingId()
+  if (sessionId && sessionId.includes('AULYN')) {
+    const parts = sessionId.split('-')
+    const aulynIdx = parts.findIndex(p => p.toUpperCase() === 'AULYN')
+    if (aulynIdx !== -1 && parts.length >= aulynIdx + 3) {
+      extractedMeetingId = `${parts[aulynIdx]}-${parts[aulynIdx + 1]}-${parts[aulynIdx + 2]}`.toUpperCase()
+    }
+  }
+
+  const fallbackSession: LiveMeetingSession = {
+    sessionId: sessionId || `sess-${Date.now()}`,
+    meetingId: extractedMeetingId,
+    classId: "dsa-2026",
+    className: "Data Structures & Algorithms",
+    topic: "Live Lecture & WebRTC Interactive Session",
+    teacherName: "Prof. Sarah Jenkins",
+    status: "Live",
+    startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    confusionSignalsCount: 0,
+    participants: [
+      { id: "teacher-demo", name: "Prof. Sarah Jenkins", role: "teacher", isHost: true, micOn: true, cameraOn: true }
+    ],
+    chatMessages: [
+      { id: `m-init-${Date.now()}`, senderId: "teacher-demo", senderName: "Prof. Sarah Jenkins", senderRole: "teacher", text: "Welcome to the live session!", timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ],
+    lectureTranscript: '',
+    publishedNotes: ''
+  }
+
+  return fallbackSession
 }
 
-export function getSessionByMeetingId(meetingId: string): LiveMeetingSession | null {
-  if (typeof window === "undefined" || !meetingId) return null
-  const cleanId = meetingId.trim().toUpperCase()
-
-  const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
-  if (mapStr) {
-    try {
-      const map: Record<string, string> = JSON.parse(mapStr)
-      const targetSessionId = map[cleanId]
-      if (targetSessionId) {
-        return getStoredMeeting(targetSessionId)
+export function getSessionByMeetingId(meetingId: string): LiveMeetingSession {
+  if (typeof window !== "undefined" && meetingId) {
+    const cleanId = meetingId.trim().toUpperCase()
+    const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
+    if (mapStr) {
+      try {
+        const map: Record<string, string> = JSON.parse(mapStr)
+        const targetSessionId = map[cleanId]
+        if (targetSessionId) {
+          return getStoredMeeting(targetSessionId)
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
   }
 
-  return null
+  const cleanId = meetingId ? meetingId.trim().toUpperCase() : generateMeetingId()
+  const fallbackSessionId = `sess-${cleanId.toLowerCase()}-${Date.now()}`
+
+  return {
+    sessionId: fallbackSessionId,
+    meetingId: cleanId,
+    classId: "dsa-2026",
+    className: "Data Structures & Algorithms",
+    topic: "Live Lecture & WebRTC Interactive Session",
+    teacherName: "Prof. Sarah Jenkins",
+    status: "Live",
+    startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    confusionSignalsCount: 0,
+    participants: [
+      { id: "teacher-demo", name: "Prof. Sarah Jenkins", role: "teacher", isHost: true, micOn: true, cameraOn: true }
+    ],
+    chatMessages: [
+      { id: `m-init-${Date.now()}`, senderId: "teacher-demo", senderName: "Prof. Sarah Jenkins", senderRole: "teacher", text: "Welcome to the live session!", timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ],
+    lectureTranscript: '',
+    publishedNotes: ''
+  }
 }
 
 export function saveStoredMeeting(session: LiveMeetingSession) {
