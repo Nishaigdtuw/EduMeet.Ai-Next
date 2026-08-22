@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react"
 import {
   Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, BookOpen,
   AlertCircle, Send, CheckCircle2, ArrowLeft, X, Sparkles, Smile, Play, Pause,
-  RefreshCw, Volume2, ShieldAlert, UserX
+  RefreshCw, Volume2, ShieldAlert, UserX, Copy, Check
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,16 @@ import { LiveMeetingSession, getStoredMeeting } from "@/lib/webrtc-meeting"
 import { FinalLectureSummary, saveLectureSummary } from "@/lib/data-store"
 import { TeacherLectureSummaryModal } from "@/components/teacher-lecture-summary-modal"
 
+// Structure for truthful speech-grounded live notes
+interface GroundedLiveNote {
+  currentTopic?: string
+  keyPoints?: string[]
+  importantDefinition?: string
+  example?: string
+  codeOrFormula?: string
+  lastUpdated?: string
+}
+
 export default function LiveMeetingRoomPage() {
   const router = useRouter()
   const params = useParams()
@@ -38,6 +48,7 @@ export default function LiveMeetingRoomPage() {
   const [session, setSession] = useState<LiveMeetingSession | null>(null)
   const [sfuClient, setSfuClient] = useState<WebRTCSFUClient | null>(null)
   const [connectionState, setConnectionState] = useState<ConnectionState>('Connecting')
+  const [copiedMeetingId, setCopiedMeetingId] = useState(false)
 
   // Pre-join & Media Stream State
   const [joined, setJoined] = useState(false)
@@ -56,10 +67,12 @@ export default function LiveMeetingRoomPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ id: string; senderId: string; senderName: string; senderRole: 'teacher' | 'student'; text: string; timestamp: string }>>([])
   const [chatInput, setChatInput] = useState("")
 
-  // Live "Notes So Far" Engine State
+  // Live Speech Recognition & Grounded Notes Engine State
+  const [transcript, setTranscript] = useState<string>("")
   const [isNotesPaused, setIsNotesPaused] = useState(false)
-  const [isUpdatingNotes, setIsUpdatingNotes] = useState(false)
-  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+  const [notesStatus, setNotesStatus] = useState<'EMPTY' | 'PROCESSING' | 'READY' | 'ERROR'>('EMPTY')
+  const [groundedNotes, setGroundedNotes] = useState<GroundedLiveNote | null>(null)
+  const speechRecognitionRef = useRef<unknown | null>(null)
 
   // Ephemeral Reactions State
   const [activeReactions, setActiveReactions] = useState<EphemeralReaction[]>([])
@@ -69,6 +82,7 @@ export default function LiveMeetingRoomPage() {
   const [showEndClassConfirm, setShowEndClassConfirm] = useState(false)
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false)
   const [generatedSummary, setGeneratedSummary] = useState<FinalLectureSummary | null>(null)
+  const [summaryErrorNotice, setSummaryErrorNotice] = useState<string | null>(null)
 
   // Initialize Session Identity & Authorization
   useEffect(() => {
@@ -80,7 +94,11 @@ export default function LiveMeetingRoomPage() {
       setSelf(currentSelf)
     }
 
-    // Verify session & enrollment via server API
+    // Reset notes state for new session ID boundary
+    setTranscript("")
+    setGroundedNotes(null)
+    setNotesStatus('EMPTY')
+
     fetch(`/api/live/session?sessionId=${sessionId}&userId=${currentSelf.userId}&role=${currentSelf.role}`)
       .then(res => res.json())
       .then(data => {
@@ -88,6 +106,9 @@ export default function LiveMeetingRoomPage() {
           setSession(data.session)
           if (data.session.chatMessages) {
             setChatMessages(data.session.chatMessages)
+          }
+          if (data.session.lectureTranscript) {
+            setTranscript(data.session.lectureTranscript)
           }
         } else {
           toast.error(data.error || "Failed to load live session.")
@@ -101,7 +122,143 @@ export default function LiveMeetingRoomPage() {
       })
   }, [sessionId])
 
-  // Request Initial Media Permission on Pre-Join
+  // Real-Time Web Speech Recognition Engine for Live Lecture Transcript
+  useEffect(() => {
+    if (!joined || isNotesPaused || typeof window === 'undefined') return
+
+    // Initialize Web Speech API if supported
+    const SpeechRecognitionClass = (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+                                   (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
+
+    if (SpeechRecognitionClass) {
+      try {
+        const recognition = new (SpeechRecognitionClass as new () => {
+          continuous: boolean
+          interimResults: boolean
+          lang: string
+          onresult: (e: { results: Array<Array<{ transcript: string }>> }) => void
+          onerror: () => void
+          onend: () => void
+          start: () => void
+          stop: () => void
+        })()
+
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = 'en-US'
+
+        recognition.onresult = (event) => {
+          let currentSpoken = ''
+          for (let i = 0; i < event.results.length; i++) {
+            currentSpoken += event.results[i][0].transcript + ' '
+          }
+          if (currentSpoken.trim()) {
+            setTranscript(currentSpoken.trim())
+          }
+        }
+
+        recognition.onerror = () => {
+          // Keep video session intact even if speech recognition fails
+        }
+
+        recognition.onend = () => {
+          // Restart recognition continuous loop if not paused
+          if (!isNotesPaused && joined) {
+            try { recognition.start() } catch {}
+          }
+        }
+
+        recognition.start()
+        speechRecognitionRef.current = recognition
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
+    return () => {
+      if (speechRecognitionRef.current) {
+        try {
+          (speechRecognitionRef.current as { stop: () => void }).stop()
+        } catch {}
+      }
+    }
+  }, [joined, isNotesPaused])
+
+  // Summarize Spoken Transcript when Word Count Threshold (>= 15 words) is Met
+  const processTranscriptToNotes = (spokenText: string) => {
+    const words = spokenText.trim().split(/\s+/).filter(Boolean)
+
+    // Threshold Check: Minimum 15 spoken words required before generating first note
+    if (words.length < 15) {
+      setNotesStatus('EMPTY')
+      setGroundedNotes(null)
+      return
+    }
+
+    setNotesStatus('PROCESSING')
+
+    setTimeout(() => {
+      const lower = spokenText.toLowerCase()
+
+      // Grounded extraction based strictly on spoken transcript content
+      const extracted: GroundedLiveNote = {
+        lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+
+      // Infer current topic from spoken sentences
+      const sentences = spokenText.split(/[.!?]+/).map(s => s.trim()).filter(Boolean)
+      if (sentences.length > 0) {
+        extracted.currentTopic = sentences[0].substring(0, 80)
+      }
+
+      // Extract key points strictly from spoken sentences
+      if (sentences.length > 1) {
+        extracted.keyPoints = sentences.slice(1, 4)
+      } else {
+        extracted.keyPoints = [spokenText.substring(0, 100)]
+      }
+
+      // Extract definition only if explicit keyword ("is", "means", "defined") was spoken
+      if (lower.includes("is defined as") || lower.includes("means") || lower.includes("referred to as")) {
+        const defSentence = sentences.find(s =>
+          s.toLowerCase().includes("defined") || s.toLowerCase().includes("means")
+        )
+        if (defSentence) {
+          extracted.importantDefinition = defSentence
+        }
+      }
+
+      // Extract example only if spoken keyword ("for example", "e.g.", "such as", "for instance") exists
+      if (lower.includes("example") || lower.includes("instance") || lower.includes("such as")) {
+        const egSentence = sentences.find(s =>
+          s.toLowerCase().includes("example") || s.toLowerCase().includes("instance") || s.toLowerCase().includes("such as")
+        )
+        if (egSentence) {
+          extracted.example = egSentence
+        }
+      }
+
+      setGroundedNotes(extracted)
+      setNotesStatus('READY')
+    }, 600)
+  }
+
+  // Periodic Live Note Update (Every 45 seconds if transcript threshold is met)
+  useEffect(() => {
+    if (!joined || isNotesPaused || !transcript) return
+
+    processTranscriptToNotes(transcript)
+
+    const interval = setInterval(() => {
+      if (transcript) {
+        processTranscriptToNotes(transcript)
+      }
+    }, 45000)
+
+    return () => clearInterval(interval)
+  }, [transcript, joined, isNotesPaused])
+
+  // Request Local Media Stream for Pre-Join
   const initLocalMedia = async () => {
     setMediaError(null)
     if (typeof window === "undefined" || !navigator?.mediaDevices) {
@@ -158,8 +315,6 @@ export default function LiveMeetingRoomPage() {
 
     client.onParticipantsChange = (updatedList) => {
       setParticipants(updatedList)
-
-      // Active Speaker selection from audio levels
       const speaker = updatedList.find(p => p.isSpeaking)
       if (speaker) {
         setActiveSpeakerId(speaker.id)
@@ -247,6 +402,14 @@ export default function LiveMeetingRoomPage() {
     setShowReactionsMenu(false)
   }
 
+  const handleCopyMeetingId = () => {
+    if (!session?.meetingId) return
+    navigator.clipboard.writeText(session.meetingId)
+    setCopiedMeetingId(true)
+    toast.success("Meeting ID copied to clipboard!")
+    setTimeout(() => setCopiedMeetingId(false), 2000)
+  }
+
   const handleLeaveMeeting = () => {
     if (sfuClient) {
       sfuClient.disconnect()
@@ -258,42 +421,51 @@ export default function LiveMeetingRoomPage() {
     router.push(self.role === 'teacher' ? '/teacher' : '/student')
   }
 
-  // Teacher End Class Confirmation & Execution
+  // Teacher Manual Refresh Notes Engine
+  const handleManualRefreshNotes = () => {
+    if (!transcript || transcript.trim().split(/\s+/).filter(Boolean).length < 15) {
+      setNotesStatus('EMPTY')
+      setGroundedNotes(null)
+      toast.info("Notes remain empty: Not enough lecture speech has been recorded yet.")
+      return
+    }
+
+    processTranscriptToNotes(transcript)
+    toast.success("Refreshed live notes from current lecture transcript!")
+  }
+
+  // Teacher End Class Execution
   const handleConfirmEndClass = async () => {
     setShowEndClassConfirm(false)
+    const spokenWords = transcript.trim().split(/\s+/).filter(Boolean)
 
-    try {
-      const res = await fetch('/api/live/end-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, teacherId: self.userId })
-      })
-
-      const data = await res.json()
-      if (data.success && data.summary) {
-        setGeneratedSummary(data.summary)
-        saveLectureSummary(data.summary)
+    if (spokenWords.length < 15) {
+      setSummaryErrorNotice("No lecture summary was generated because there was not enough lecture content spoken during this session.")
+      setGeneratedSummary(null)
+    } else {
+      try {
+        const res = await fetch('/api/live/end-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, teacherId: self.userId })
+        })
+        const data = await res.json()
+        if (data.success && data.summary) {
+          setGeneratedSummary(data.summary)
+          saveLectureSummary(data.summary)
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // Fallback local summary creation
     }
 
     if (sfuClient) {
       sfuClient.endClassForEveryone()
     }
 
-    toast.success("Class has been ended. Final lecture summary generated.")
+    toast.success("Class has been ended.")
     setIsSummaryModalOpen(true)
   }
-
-  // Clean disconnect on unmount
-  useEffect(() => {
-    return () => {
-      if (sfuClient) {
-        sfuClient.disconnect()
-      }
-    }
-  }, [sfuClient])
 
   if (!session) return null
 
@@ -316,6 +488,27 @@ export default function LiveMeetingRoomPage() {
               <ArrowLeft className="w-4 h-4 mr-1" /> Exit
             </Button>
           </div>
+
+          {/* Meeting ID Banner */}
+          {session.meetingId && (
+            <div className="p-3 bg-[#242220] border border-[#3E3A35] rounded-2xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center space-x-2">
+                <span className="text-[#A19A91] font-bold uppercase text-[10px]">Meeting ID:</span>
+                <span className="font-mono font-bold text-[#E9B949] tracking-wider text-sm bg-[#1E1C1A] px-2.5 py-1 rounded-lg border border-[#3E3A35]">
+                  {session.meetingId}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCopyMeetingId}
+                className="h-7 text-xs font-bold border-[#3E3A35] text-white hover:bg-[#3E3A35] rounded-lg flex items-center gap-1 cursor-pointer"
+              >
+                {copiedMeetingId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#E76F51]" />}
+                {copiedMeetingId ? "Copied!" : "Copy ID"}
+              </Button>
+            </div>
+          )}
 
           {/* Camera Preview Tile */}
           <div className="relative aspect-video bg-[#292724] rounded-2xl overflow-hidden border border-[#3E3A35] flex items-center justify-center">
@@ -395,7 +588,14 @@ export default function LiveMeetingRoomPage() {
         <div className="flex items-center space-x-3">
           <span className="w-3 h-3 bg-red-500 rounded-full animate-ping" />
           <div>
-            <h1 className="text-sm sm:text-base font-serif font-black text-white">{session.className}</h1>
+            <h1 className="text-sm sm:text-base font-serif font-black text-white flex items-center gap-2">
+              {session.className}
+              {session.meetingId && (
+                <span className="font-mono text-xs font-bold text-[#E9B949] bg-[#242220] px-2 py-0.5 rounded border border-[#3E3A35]">
+                  ID: {session.meetingId}
+                </span>
+              )}
+            </h1>
             <p className="text-[10px] text-[#A19A91] font-semibold">{session.topic} • Started {session.startedAt}</p>
           </div>
         </div>
@@ -596,10 +796,10 @@ export default function LiveMeetingRoomPage() {
               </div>
             )}
 
-            {/* REAL-TIME "NOTES SO FAR" PANEL */}
+            {/* REAL-TIME GROUNDED "NOTES SO FAR" PANEL */}
             {activePanel === 'notes' && (
               <div className="p-3 space-y-3 overflow-y-auto flex-1 text-xs">
-                {/* Teacher Control Bar */}
+                {/* Clean Educator Controls */}
                 {self.role === 'teacher' && (
                   <div className="p-2.5 bg-[#242220] border border-[#3E3A35] rounded-xl flex items-center justify-between">
                     <span className="text-[10px] font-bold text-[#A19A91] uppercase">Teacher Controls:</span>
@@ -609,27 +809,21 @@ export default function LiveMeetingRoomPage() {
                         variant="outline"
                         onClick={() => {
                           setIsNotesPaused(!isNotesPaused)
-                          toast.info(isNotesPaused ? "Resumed live notes updates" : "Paused live notes updates")
+                          toast.info(isNotesPaused ? "Resumed live notes generation" : "Paused live notes generation")
                         }}
                         className="text-[10px] font-bold h-6 px-2 border-[#3E3A35] text-white hover:bg-[#3E3A35] rounded-lg cursor-pointer flex items-center gap-1"
                       >
                         {isNotesPaused ? <Play className="w-3 h-3 text-emerald-400" /> : <Pause className="w-3 h-3 text-amber-400" />}
-                        {isNotesPaused ? "Resume" : "Pause"}
+                        {isNotesPaused ? "Resume Notes" : "Pause Notes"}
                       </Button>
+
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setIsUpdatingNotes(true)
-                          setTimeout(() => {
-                            setLastUpdatedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-                            setIsUpdatingNotes(false)
-                            toast.success("Live Notes refreshed!")
-                          }, 600)
-                        }}
+                        onClick={handleManualRefreshNotes}
                         className="text-[10px] font-bold h-6 px-2 border-[#3E3A35] text-[#8B7EC8] hover:bg-[#3E3A35] rounded-lg cursor-pointer flex items-center gap-1"
                       >
-                        <RefreshCw className="w-3 h-3" /> Refresh
+                        <RefreshCw className="w-3 h-3" /> Refresh Notes
                       </Button>
                     </div>
                   </div>
@@ -641,38 +835,80 @@ export default function LiveMeetingRoomPage() {
                       <Sparkles className="w-3 h-3 text-[#E9B949]" /> Notes So Far
                     </span>
                     <span className="text-[10px] text-[#A19A91] font-mono">
-                      {isUpdatingNotes ? "Updating notes..." : `Last updated: ${lastUpdatedTime}`}
+                      {notesStatus === 'PROCESSING' ? 'Updating notes...' : groundedNotes?.lastUpdated ? `Last updated: ${groundedNotes.lastUpdated}` : 'State: Empty'}
                     </span>
                   </div>
 
-                  <div>
-                    <h4 className="font-bold text-[#E76F51] text-[11px] uppercase tracking-wide">Current Topic</h4>
-                    <p className="text-white font-serif font-bold text-xs mt-0.5">{session.topic}</p>
-                  </div>
+                  {/* EMPTY STATE */}
+                  {notesStatus === 'EMPTY' && (
+                    <div className="py-8 text-center space-y-2">
+                      <BookOpen className="w-8 h-8 text-[#A19A91]/40 mx-auto" />
+                      <p className="text-xs text-[#A19A91] font-semibold italic">
+                        Live notes will appear as the lecture progresses.
+                      </p>
+                    </div>
+                  )}
 
-                  <div>
-                    <h4 className="font-bold text-[#8B7EC8] text-[11px] uppercase tracking-wide">Key Points</h4>
-                    <ul className="list-disc list-inside mt-1 space-y-1 text-[#A19A91] font-medium leading-relaxed">
-                      <li>A tree contains nodes connected hierarchically from a root node.</li>
-                      <li>Depth-First Search (DFS) explores one branch completely before backtracking.</li>
-                      <li>Recursive DFS utilizes the system function call stack frames.</li>
-                      <li>Breadth-First Search (BFS) explores nodes level-by-level using a FIFO Queue.</li>
-                    </ul>
-                  </div>
+                  {/* PROCESSING STATE */}
+                  {notesStatus === 'PROCESSING' && (
+                    <div className="py-6 text-center space-y-2">
+                      <RefreshCw className="w-6 h-6 text-[#8B7EC8] animate-spin mx-auto" />
+                      <p className="text-xs text-[#8B7EC8] font-bold">Updating notes...</p>
+                    </div>
+                  )}
 
-                  <div>
-                    <h4 className="font-bold text-[#75B798] text-[11px] uppercase tracking-wide">Important Definition</h4>
-                    <p className="text-white font-medium bg-[#1E1C1A] p-2 rounded-lg border border-[#3E3A35] mt-1 text-[11px]">
-                      Inorder Traversal (BST): Left -&gt; Root -&gt; Right yields strictly sorted node keys in ascending sequence.
-                    </p>
-                  </div>
+                  {/* ERROR STATE */}
+                  {notesStatus === 'ERROR' && (
+                    <div className="py-6 text-center space-y-2">
+                      <AlertCircle className="w-6 h-6 text-red-400 mx-auto" />
+                      <p className="text-xs text-red-400 font-bold">Live notes could not be updated right now.</p>
+                    </div>
+                  )}
 
-                  <div>
-                    <h4 className="font-bold text-[#E9B949] text-[11px] uppercase tracking-wide">Example</h4>
-                    <p className="text-[#A19A91] font-medium mt-0.5 text-[11px]">
-                      BST nodes [5, 3, 7] -&gt; Inorder traversal yields sorted array [3, 5, 7].
-                    </p>
-                  </div>
+                  {/* READY STATE: GROUNDED IN ACTUAL SPOKEN LECTURE SPEECH */}
+                  {notesStatus === 'READY' && groundedNotes && (
+                    <div className="space-y-3">
+                      {/* Current Topic (only render if available) */}
+                      {groundedNotes.currentTopic && (
+                        <div>
+                          <h4 className="font-bold text-[#E76F51] text-[11px] uppercase tracking-wide">Current Topic</h4>
+                          <p className="text-white font-serif font-bold text-xs mt-0.5">{groundedNotes.currentTopic}</p>
+                        </div>
+                      )}
+
+                      {/* Key Points (only render if available) */}
+                      {groundedNotes.keyPoints && groundedNotes.keyPoints.length > 0 && (
+                        <div>
+                          <h4 className="font-bold text-[#8B7EC8] text-[11px] uppercase tracking-wide">Key Points</h4>
+                          <ul className="list-disc list-inside mt-1 space-y-1 text-[#A19A91] font-medium leading-relaxed">
+                            {groundedNotes.keyPoints.map((pt, i) => (
+                              <li key={i}>{pt}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Important Definition (only render if spoken) */}
+                      {groundedNotes.importantDefinition && (
+                        <div>
+                          <h4 className="font-bold text-[#75B798] text-[11px] uppercase tracking-wide">Important Definition</h4>
+                          <p className="text-white font-medium bg-[#1E1C1A] p-2 rounded-lg border border-[#3E3A35] mt-1 text-[11px]">
+                            {groundedNotes.importantDefinition}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Example (only render if spoken) */}
+                      {groundedNotes.example && (
+                        <div>
+                          <h4 className="font-bold text-[#E9B949] text-[11px] uppercase tracking-wide">Example</h4>
+                          <p className="text-[#A19A91] font-medium mt-0.5 text-[11px]">
+                            {groundedNotes.example}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -796,7 +1032,7 @@ export default function LiveMeetingRoomPage() {
               <ShieldAlert className="w-5 h-5 text-red-500" /> End Class for Everyone?
             </DialogTitle>
             <DialogDescription className="text-xs text-[#A19A91]">
-              This will disconnect all live participants, close the media session, stop transcript capture, and trigger the final lecture summary generation workflow.
+              This will disconnect all live participants, close the WebRTC media session, and finish the live lecture session.
             </DialogDescription>
           </DialogHeader>
 
@@ -816,6 +1052,7 @@ export default function LiveMeetingRoomPage() {
         open={isSummaryModalOpen}
         onOpenChange={setIsSummaryModalOpen}
         summary={generatedSummary}
+        errorNotice={summaryErrorNotice}
         onPublished={() => {
           router.push('/teacher')
         }}

@@ -20,20 +20,36 @@ export interface MeetingChatMessage {
 
 export interface LiveMeetingSession {
   sessionId: string
+  meetingId: string
   classId: string
   className: string
   topic: string
   teacherName: string
   status: 'PreJoin' | 'Live' | 'Ended'
   startedAt: string
+  endedAt?: string
   confusionSignalsCount: number
   lastSpikeTopic?: string
   participants: MeetingParticipant[]
   chatMessages: MeetingChatMessage[]
+  lectureTranscript?: string
   publishedNotes?: string
 }
 
 const LIVE_MEETINGS_KEY = "aulyn_live_meetings"
+const MEETING_ID_MAP_KEY = "aulyn_meeting_id_map"
+
+/**
+ * Generate a unique human-friendly Meeting ID (e.g. AULYN-7KQ9-X2M4)
+ */
+export function generateMeetingId(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let part1 = ''
+  let part2 = ''
+  for (let i = 0; i < 4; i++) part1 += chars.charAt(Math.floor(Math.random() * chars.length))
+  for (let i = 0; i < 4; i++) part2 += chars.charAt(Math.floor(Math.random() * chars.length))
+  return `AULYN-${part1}-${part2}`
+}
 
 export async function requestMediaStream(audio: boolean, video: boolean): Promise<{ stream: MediaStream | null; error: string | null }> {
   if (typeof window === "undefined" || !navigator?.mediaDevices) {
@@ -63,31 +79,59 @@ export function getStoredMeeting(sessionId: string): LiveMeetingSession | null {
     }
   }
 
-  return {
-    sessionId,
-    classId: "dsa-2026",
-    className: "Data Structures & Algorithms",
-    topic: "Trees & Tree Traversal",
-    teacherName: "Prof. Sarah Jenkins",
-    status: "Live",
-    startedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    confusionSignalsCount: 14,
-    lastSpikeTopic: "DFS Call Stack Execution",
-    participants: [
-      { id: "teacher-demo", name: "Prof. Sarah Jenkins", role: "teacher", isHost: true, micOn: true, cameraOn: true },
-      { id: "student-demo", name: "Alex Rivera", role: "student", micOn: true, cameraOn: true },
-      { id: "student-2", name: "Bob Smith", role: "student", micOn: false, cameraOn: true }
-    ],
-    chatMessages: [
-      { id: "m1", senderId: "teacher-demo", senderName: "Prof. Sarah Jenkins", senderRole: "teacher", text: "Welcome class! Today we are tracing binary tree inorder recursion.", timestamp: "10:02 AM" },
-      { id: "m2", senderId: "student-2", senderName: "Bob Smith", senderRole: "student", text: "Professor, will the call stack depth exceed memory for skewed trees?", timestamp: "10:05 AM" }
-    ],
-    publishedNotes: "Depth-First Search (DFS) traverses down a tree branch completely using recursion/stack frames before backtracking."
+  // Check if mapping exists by meetingId
+  const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
+  if (mapStr) {
+    try {
+      const map: Record<string, string> = JSON.parse(mapStr)
+      // Check if argument passed was actually a meetingId
+      const mappedSessionId = map[sessionId.toUpperCase()]
+      if (mappedSessionId) {
+        const mappedStr = localStorage.getItem(`${LIVE_MEETINGS_KEY}_${mappedSessionId}`)
+        if (mappedStr) return JSON.parse(mappedStr)
+      }
+    } catch {
+      // ignore
+    }
   }
+
+  return null
+}
+
+export function getSessionByMeetingId(meetingId: string): LiveMeetingSession | null {
+  if (typeof window === "undefined" || !meetingId) return null
+  const cleanId = meetingId.trim().toUpperCase()
+
+  const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
+  if (mapStr) {
+    try {
+      const map: Record<string, string> = JSON.parse(mapStr)
+      const targetSessionId = map[cleanId]
+      if (targetSessionId) {
+        return getStoredMeeting(targetSessionId)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null
 }
 
 export function saveStoredMeeting(session: LiveMeetingSession) {
   if (typeof window === "undefined") return
   localStorage.setItem(`${LIVE_MEETINGS_KEY}_${session.sessionId}`, JSON.stringify(session))
+
+  if (session.meetingId) {
+    try {
+      const mapStr = localStorage.getItem(MEETING_ID_MAP_KEY)
+      const map: Record<string, string> = mapStr ? JSON.parse(mapStr) : {}
+      map[session.meetingId.toUpperCase()] = session.sessionId
+      localStorage.setItem(MEETING_ID_MAP_KEY, JSON.stringify(map))
+    } catch {
+      // ignore
+    }
+  }
+
   window.dispatchEvent(new Event("aulyn-meeting-update"))
 }

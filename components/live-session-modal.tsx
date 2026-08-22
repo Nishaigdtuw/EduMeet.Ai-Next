@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from "react"
-import { Video, BookOpen, Plus, ShieldAlert } from "lucide-react"
+import { Video, BookOpen, Plus, Copy, Check } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -30,26 +30,40 @@ export function LiveSessionModal({
   const router = useRouter()
   const [session, setSession] = useState<LiveSessionData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [copiedId, setCopiedId] = useState(false)
 
   // Teacher Create Session Form State
   const [sessionTitle, setSessionTitle] = useState("")
   const [sessionTopic, setSessionTopic] = useState("")
   const [sessionDesc, setSessionDesc] = useState("")
 
+  // Student Join By Meeting ID State
+  const [inputMeetingId, setInputMeetingId] = useState("")
+
   useEffect(() => {
     if (classroom && open) {
       const active = getLiveSession(classroom.classId)
       if (active && active.status === 'Live') {
         setSession(active)
+        if (active.meetingId) {
+          setInputMeetingId(active.meetingId)
+        }
       } else {
         setSession(null)
-        // Pre-fill defaults for teacher creation
+        setInputMeetingId("")
         setSessionTitle(`${classroom.className} Lecture`)
-        setSessionTopic("Trees & Tree Traversal (DFS & BFS)")
-        setSessionDesc("Live real-time lecture covering binary tree invariants, recursive call stack analysis, and queue-based BFS level-order traversal.")
+        setSessionTopic("Course Algorithms & Concepts")
+        setSessionDesc("Live real-time lecture session.")
       }
     }
   }, [classroom, open])
+
+  const handleCopyMeetingId = (meetingId: string) => {
+    navigator.clipboard.writeText(meetingId)
+    setCopiedId(true)
+    toast.success("Meeting ID copied to clipboard!")
+    setTimeout(() => setCopiedId(false), 2000)
+  }
 
   const handleStartNewLiveClass = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,7 +94,7 @@ export function LiveSessionModal({
 
       const data = await res.json()
       if (data.success && data.sessionId) {
-        toast.success(`Live session created: ${sessionTitle}`)
+        toast.success(`Live session created! Meeting ID: ${data.meetingId}`)
         onOpenChange(false)
         router.push(`/live/${data.sessionId}`)
       } else {
@@ -93,25 +107,30 @@ export function LiveSessionModal({
     }
   }
 
-  const handleJoinVirtualMeeting = async () => {
-    const user = getAuthenticatedUser()
-    const targetSessionId = session?.sessionId || `sess-${classroom.classId}-1`
+  const handleJoinByMeetingId = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const targetId = inputMeetingId.trim().toUpperCase()
+
+    if (!targetId) {
+      toast.error("Please enter a valid Meeting ID.")
+      return
+    }
 
     setLoading(true)
+    const user = getAuthenticatedUser()
+
     try {
-      const res = await fetch(`/api/live/session?sessionId=${targetSessionId}&userId=${user?.userId || 'student-demo'}&role=${userRole}`)
+      const res = await fetch(`/api/live/session?meetingId=${encodeURIComponent(targetId)}&userId=${user?.userId || 'student-demo'}&role=${userRole}`)
       const data = await res.json()
 
-      if (data.success) {
+      if (data.success && data.sessionId) {
         onOpenChange(false)
-        router.push(`/live/${targetSessionId}`)
+        router.push(`/live/${data.sessionId}`)
       } else {
-        toast.error(data.error || "Unable to join live meeting.")
+        toast.error(data.error || "Invalid Meeting ID.")
       }
     } catch {
-      // Fallback navigate
-      onOpenChange(false)
-      router.push(`/live/${targetSessionId}`)
+      toast.error("Unable to join live meeting.")
     } finally {
       setLoading(false)
     }
@@ -131,16 +150,6 @@ export function LiveSessionModal({
               </span>
               {session && <span className="text-xs font-bold text-[#77716A]">{session.startedAt}</span>}
             </div>
-
-            {session && (
-              <Button
-                onClick={handleJoinVirtualMeeting}
-                disabled={loading}
-                className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Video className="w-4 h-4" /> Open Meeting Room
-              </Button>
-            )}
           </div>
 
           <DialogTitle className="text-xl font-serif font-black text-[#292724] mt-2">
@@ -148,34 +157,61 @@ export function LiveSessionModal({
           </DialogTitle>
           <DialogDescription className="text-xs text-[#77716A]">
             {userRole === 'teacher'
-              ? 'Educator control panel for starting live virtual classroom sessions with WebRTC SFU media routing and AI Live Notes.'
-              : 'Join the live virtual meeting room with real-time video, audio, and Live Notes So Far.'}
+              ? 'Educator control panel for starting live sessions, retrieving Meeting IDs, and monitoring real-time lecture notes.'
+              : 'Join live class using Meeting ID and view real-time lecture notes as the lecture progresses.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 pt-4">
-          {/* ACTIVE SESSION VIEW */}
+          {/* ACTIVE SESSION VIEW FOR TEACHER OR ENROLLED STUDENT */}
           {session ? (
-            <div className="p-4 bg-gradient-to-r from-red-50 to-amber-50 border-2 border-red-300 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-red-600 text-white rounded-xl flex items-center justify-center font-bold shrink-0 shadow-2xs">
-                  <Video className="w-5 h-5" />
+            <div className="p-4 bg-gradient-to-r from-red-50 to-amber-50 border-2 border-red-300 rounded-2xl shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-red-600 text-white rounded-xl flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                    <Video className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-serif font-bold text-red-900 uppercase tracking-wider">Virtual Class Meeting Room Active</h4>
+                    <p className="text-xs text-[#292724] font-semibold mt-0.5">
+                      Topic: <strong>{session.topic}</strong> • Instructor: {session.teacherName || 'Prof. Sarah Jenkins'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs font-serif font-bold text-red-900 uppercase tracking-wider">Virtual Class Meeting Room Active</h4>
-                  <p className="text-xs text-[#292724] font-semibold mt-0.5">
-                    Topic: <strong>{session.topic}</strong> • Instructor: {session.teacherName || 'Prof. Sarah Jenkins'}
-                  </p>
-                </div>
+
+                <Button
+                  onClick={() => {
+                    onOpenChange(false)
+                    router.push(`/live/${session.sessionId}`)
+                  }}
+                  disabled={loading}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2 px-5 rounded-xl shadow-2xs cursor-pointer shrink-0"
+                >
+                  Enter Meeting Room
+                </Button>
               </div>
 
-              <Button
-                onClick={handleJoinVirtualMeeting}
-                disabled={loading}
-                className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2 px-5 rounded-xl shadow-2xs cursor-pointer shrink-0"
-              >
-                {loading ? 'Verifying...' : 'Enter Meeting Room'}
-              </Button>
+              {/* Display Meeting ID with Copy Button */}
+              {session.meetingId && (
+                <div className="p-2.5 bg-white/90 border border-red-200 rounded-xl flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-[#77716A] uppercase text-[10px]">Meeting ID:</span>
+                    <span className="font-mono font-bold text-[#292724] tracking-wider text-sm bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                      {session.meetingId}
+                    </span>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => session.meetingId && handleCopyMeetingId(session.meetingId)}
+                    className="h-7 text-xs font-bold border-[#E5DCD0] text-[#292724] hover:bg-[#FFF9F1] rounded-lg flex items-center gap-1 cursor-pointer"
+                  >
+                    {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-[#E76F51]" />}
+                    {copiedId ? "Copied!" : "Copy ID"}
+                  </Button>
+                </div>
+              )}
             </div>
           ) : userRole === 'teacher' ? (
             /* TEACHER CREATE LIVE CLASS FORM */
@@ -201,7 +237,7 @@ export function LiveSessionModal({
                 <Input
                   value={sessionTopic}
                   onChange={(e) => setSessionTopic(e.target.value)}
-                  placeholder="e.g. Binary Search Trees & Recursive Traversals"
+                  placeholder="e.g. Algorithms & Space Complexity"
                   className="bg-[#FFF9F1] border-[#E5DCD0] text-xs font-semibold rounded-xl"
                   required
                 />
@@ -212,7 +248,7 @@ export function LiveSessionModal({
                 <Input
                   value={sessionDesc}
                   onChange={(e) => setSessionDesc(e.target.value)}
-                  placeholder="Brief summary of concepts to be covered..."
+                  placeholder="Brief summary of concepts..."
                   className="bg-[#FFF9F1] border-[#E5DCD0] text-xs font-semibold rounded-xl"
                 />
               </div>
@@ -228,26 +264,46 @@ export function LiveSessionModal({
                 </Button>
               </div>
             </form>
-          ) : (
-            /* STUDENT NO ACTIVE CLASS NOTICE */
-            <Card className="bg-white border border-[#E5DCD0] shadow-2xs rounded-2xl p-6 text-center space-y-3">
-              <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
-                <ShieldAlert className="w-6 h-6" />
+          ) : null}
+
+          {/* STUDENT JOIN BY MEETING ID FORM */}
+          {userRole === 'student' && (
+            <form onSubmit={handleJoinByMeetingId} className="bg-white border border-[#E5DCD0] rounded-2xl p-5 shadow-2xs space-y-4">
+              <div className="flex items-center space-x-2 text-[#8B7EC8]">
+                <Video className="w-5 h-5" />
+                <h3 className="text-sm font-serif font-bold text-[#292724]">Join Live Class using Meeting ID</h3>
               </div>
-              <h3 className="text-base font-serif font-bold text-[#292724]">No Live Class Currently Active</h3>
-              <p className="text-xs text-[#77716A] max-w-md mx-auto leading-relaxed font-semibold">
-                Your instructor has not started a live lecture session for <strong>{classroom?.className}</strong> yet. You will be notified automatically when the session begins.
-              </p>
-            </Card>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-[#292724]">Enter Meeting ID</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={inputMeetingId}
+                    onChange={(e) => setInputMeetingId(e.target.value)}
+                    placeholder="e.g. AULYN-7KQ9-X2M4"
+                    className="bg-[#FFF9F1] border-[#E5DCD0] text-xs font-mono font-bold uppercase tracking-wider rounded-xl"
+                    required
+                  />
+                  <Button
+                    type="submit"
+                    disabled={loading || !inputMeetingId.trim()}
+                    className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs px-6 rounded-xl shadow-md cursor-pointer shrink-0"
+                  >
+                    {loading ? "Joining..." : "Join Class"}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-[#77716A]">Ask your educator for the unique AULYN Meeting ID to enter the live session.</p>
+              </div>
+            </form>
           )}
 
           <Card className="bg-white border border-[#E5DCD0] shadow-2xs rounded-2xl p-5 space-y-3">
             <div className="flex items-center space-x-2 text-[#8B7EC8]">
               <BookOpen className="w-5 h-5" />
-              <h3 className="text-sm font-serif font-bold text-[#292724]">Live Class Notes Architecture</h3>
+              <h3 className="text-sm font-serif font-bold text-[#292724]">Live Notes Grounded in Lecture Speech</h3>
             </div>
             <p className="text-xs text-[#77716A] font-semibold leading-relaxed">
-              Notes are generated continuously on a separate AI pipeline parallel to WebRTC audio/video routing. Enter the meeting room to view the real-time <strong>Notes So Far</strong> panel.
+              Live Notes start completely <strong>empty</strong> and populate dynamically only as the educator speaks content during the lecture. Stale sample data is never displayed.
             </p>
           </Card>
         </div>

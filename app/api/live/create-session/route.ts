@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { saveStoredMeeting, LiveMeetingSession } from '@/lib/webrtc-meeting'
+import { saveStoredMeeting, generateMeetingId, LiveMeetingSession } from '@/lib/webrtc-meeting'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(req: Request) {
@@ -26,10 +26,12 @@ export async function POST(req: Request) {
     }
 
     const sessionId = `sess-${classId}-${Date.now()}`
+    const meetingId = generateMeetingId()
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
     const newSession: LiveMeetingSession = {
       sessionId,
+      meetingId,
       classId,
       className: targetClassName || 'Classroom Session',
       topic: `${title} — ${topic}`,
@@ -53,11 +55,12 @@ export async function POST(req: Request) {
           senderId: teacherId || 'teacher-demo',
           senderName: teacherName || 'Prof. Sarah Jenkins',
           senderRole: 'teacher',
-          text: `Live class "${title}" has started. Topic: ${topic}. Welcome everyone!`,
+          text: `Live class "${title}" has started (Meeting ID: ${meetingId}). Topic: ${topic}. Welcome everyone!`,
           timestamp: nowStr
         }
       ],
-      publishedNotes: description || `Live session started on ${topic}.`
+      lectureTranscript: '',
+      publishedNotes: description || ''
     }
 
     // Save session in server-backed store
@@ -66,6 +69,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       sessionId,
+      meetingId,
       session: newSession
     })
   } catch (error) {

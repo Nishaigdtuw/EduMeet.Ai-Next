@@ -1,60 +1,73 @@
 import { NextResponse } from 'next/server'
-import { getStoredMeeting } from '@/lib/webrtc-meeting'
+import { getStoredMeeting, getSessionByMeetingId, LiveMeetingSession } from '@/lib/webrtc-meeting'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const sessionId = searchParams.get('sessionId')
+    const sessionIdParam = searchParams.get('sessionId')
+    const meetingIdParam = searchParams.get('meetingId')
     const userId = searchParams.get('userId')
     const userRole = searchParams.get('role')
 
-    if (!sessionId) {
-      return NextResponse.json({ error: 'Missing sessionId parameter' }, { status: 400 })
+    if (!sessionIdParam && !meetingIdParam) {
+      return NextResponse.json({ error: 'Please provide either a sessionId or Meeting ID.' }, { status: 400 })
     }
 
-    const session = getStoredMeeting(sessionId)
+    let session: LiveMeetingSession | null = null
+
+    if (meetingIdParam) {
+      session = getSessionByMeetingId(meetingIdParam) || getStoredMeeting(meetingIdParam)
+      if (!session) {
+        return NextResponse.json({ error: 'Invalid Meeting ID.' }, { status: 404 })
+      }
+    } else if (sessionIdParam) {
+      session = getStoredMeeting(sessionIdParam) || getSessionByMeetingId(sessionIdParam)
+      if (!session) {
+        return NextResponse.json({ error: 'Live meeting session not found.' }, { status: 404 })
+      }
+    }
+
     if (!session) {
-      return NextResponse.json({ error: 'Live meeting session not found or has expired.' }, { status: 404 })
+      return NextResponse.json({ error: 'Invalid Meeting ID.' }, { status: 404 })
     }
 
-    // Classroom Enrollment & Ownership Security Verification
-    if (userId && session.classId) {
-      let isAuthorized = false
+    // Check if session has ended
+    if (session.status === 'Ended') {
+      return NextResponse.json({ error: 'This live class has already ended.' }, { status: 410 })
+    }
 
-      if (userRole === 'teacher') {
-        // Teacher must be owner or educator
-        isAuthorized = true
-      } else {
-        // Check DB enrollment
-        try {
-          const enrollment = await prisma.enrolled.findFirst({
-            where: {
-              studId: userId,
-              classId: session.classId
-            }
-          })
-          if (enrollment) {
-            isAuthorized = true
+    // Enrollment Authorization Verification
+    if (userId && session.classId && userRole !== 'teacher') {
+      let isEnrolled = false
+      try {
+        const enrollment = await prisma.enrolled.findFirst({
+          where: {
+            studId: userId,
+            classId: session.classId
           }
-        } catch {
-          // Fallback authorization for demo/authenticated student
-          isAuthorized = true
+        })
+        if (enrollment) {
+          isEnrolled = true
         }
+      } catch {
+        // Fallback demo student check
+        isEnrolled = true
       }
 
-      if (!isAuthorized) {
+      if (!isEnrolled) {
         return NextResponse.json({
-          error: 'Access Denied: You must be enrolled in this classroom to join the live session.'
+          error: 'You are not enrolled in the classroom for this live session.'
         }, { status: 403 })
       }
     }
 
-    // Generate short-lived SFU Session Access Token
-    const sfuToken = `sfu_token_${sessionId}_${userId || 'guest'}_${Date.now()}`
+    const sfuToken = `sfu_token_${session.sessionId}_${userId || 'guest'}_${Date.now()}`
 
     return NextResponse.json({
       success: true,
+      sessionId: session.sessionId,
+      meetingId: session.meetingId,
       session,
       token: sfuToken,
       iceServers: [

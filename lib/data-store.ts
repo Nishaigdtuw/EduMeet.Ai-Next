@@ -238,6 +238,7 @@ export interface PaymentRecord {
 
 export interface LiveSessionData {
   sessionId: string
+  meetingId?: string
   classId: string
   className: string
   topic: string
