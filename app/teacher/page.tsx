@@ -1,11 +1,11 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { FileText, LogOut, Plus, Book, FileCheck, Crown, Menu, ChevronDown, ChevronRight, Settings, LayoutDashboard, FolderOpen, Download, User, Save, Eye, Send, ArrowLeft, RefreshCw, Bell, HelpCircle } from "lucide-react"
+import { FileText, LogOut, Plus, Book, FileCheck, Crown, Menu, ChevronDown, ChevronRight, Settings, LayoutDashboard, FolderOpen, Download, User, Save, Eye, Send, Bell, HelpCircle, Video } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Input } from "@/components/ui/input"
@@ -29,6 +29,7 @@ import { TeacherReviewModal } from "@/components/teacher-review-modal"
 import { TeacherQuizModal } from "@/components/teacher-quiz-modal"
 import { QuizAttemptsModal } from "@/components/quiz-attempts-modal"
 import { ClassroomLeaderboard } from "@/components/classroom-leaderboard"
+import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { getStoredClassrooms, saveStoredClassrooms, ClassroomData, getSubmissions, SubmissionData, AnnouncementData, NotificationItem, AssignmentData, viewDocumentFile, downloadDocumentFile, createClassroom, getStoredSubscription, SubscriptionData, QuizData, getQuizzesForClass, deleteQuiz, getQuizAttemptsForQuiz, getVivaSessions } from "@/lib/data-store"
@@ -340,23 +341,14 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
     toast.success("Profile & Educator settings saved successfully!")
   }
 
-  // Navigation: Exit Demo
-  const handleExitDemo = () => {
+  // Navigation: Logout
+  const handleLogout = () => {
     clearAuthenticatedUser()
-    toast.info("Exited Demo Workspace. Returned to AULYN Home.")
-    router.replace("/")
+    toast.success("Successfully logged out.")
+    router.push("/")
   }
 
-  // Navigation: Switch Role to Student Demo
-  const handleSwitchRole = (newRole: 'teacher' | 'student') => {
-    const mockUser = newRole === 'teacher'
-      ? { userId: 'teacher-demo', name: 'Prof. Sarah Jenkins', email: 'sarah.jenkins@aulyn.edu', role: 'teacher' as const }
-      : { userId: 'student-demo', name: 'Alex Rivera', email: 'alex.rivera@aulyn.edu', role: 'student' as const }
 
-    setAuthenticatedUser(mockUser)
-    toast.success(`Switched role to ${newRole === 'teacher' ? 'Teacher' : 'Student'} Workspace`)
-    router.replace(newRole === 'teacher' ? '/teacher' : '/student')
-  }
 
   // Sidebar Content Component
   const RenderSidebarContent = () => (
@@ -455,26 +447,6 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
 
         </nav>
       </div>
-
-      <div className="pt-4 border-t border-[#E5DCD0] space-y-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleSwitchRole("student")}
-          className="w-full border-[#E76F51] text-[#E76F51] hover:bg-[#E76F51]/10 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Switch to Student Demo
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start text-[#77716A] hover:text-[#E76F51] text-xs font-semibold cursor-pointer"
-          onClick={handleExitDemo}
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" /> ← Back to AULYN / Exit Demo
-        </Button>
-      </div>
     </div>
   )
 
@@ -545,15 +517,6 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
             <Crown className="w-4 h-4 text-[#E9B949]" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleExitDemo}
-            className="text-[#E76F51] hover:bg-[#E76F51]/10 font-bold text-xs rounded-xl hidden sm:flex items-center gap-1 cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Exit Demo
-          </Button>
-
           <div className="text-right hidden sm:block">
             <div className="flex items-center gap-1.5 justify-end">
               <p className="text-xs font-bold text-[#292724]">{profileName}</p>
@@ -564,7 +527,7 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
             <p className="text-[10px] font-semibold text-[#4A453F]">{profileEmail}</p>
           </div>
 
-          <Button variant="outline" size="sm" onClick={handleExitDemo} className="text-[#77716A] hover:text-red-600 border-[#E5DCD0] text-xs font-semibold rounded-xl cursor-pointer">
+          <Button variant="outline" size="sm" onClick={handleLogout} className="text-[#77716A] hover:text-red-600 border-[#E5DCD0] text-xs font-semibold rounded-xl cursor-pointer">
             <LogOut className="w-4 h-4 mr-1.5" /> Logout
           </Button>
         </div>
@@ -759,26 +722,43 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
           )}
 
           <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full flex flex-col">
-            <TabsList className="flex overflow-x-auto w-full max-w-4xl bg-[#F1E8DD] p-1.5 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1 sm:gap-1.5 scrollbar-none">
-              <TabsTrigger value="overview" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="leaderboard" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-amber-600 data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Mastery League
-              </TabsTrigger>
-              <TabsTrigger value="students" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#8B7EC8] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Roster
-              </TabsTrigger>
-              <TabsTrigger value="submissions" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Submissions
-              </TabsTrigger>
-              <TabsTrigger value="quizzes" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Quizzes
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#75B798] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Analytics
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <WorkspaceSwitcher
+                role="teacher"
+                activeTab={activeMainTab}
+                onSelectTab={setActiveMainTab}
+                onOpenModal={handleHelpNavigation}
+              />
+
+              {/* Contextual Quick Action */}
+              {activeMainTab === "overview" && (
+                <Button
+                  size="sm"
+                  onClick={() => setLiveSessionOpen(true)}
+                  className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Video className="w-3.5 h-3.5" /> Start Live Class
+                </Button>
+              )}
+              {activeMainTab === "quizzes" && (
+                <Button
+                  size="sm"
+                  onClick={() => setTeacherQuizOpen(true)}
+                  className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Create Quiz
+                </Button>
+              )}
+              {activeMainTab === "materials" && (
+                <Button
+                  size="sm"
+                  onClick={() => setUploadMaterialOpen(true)}
+                  className="bg-[#8B7EC8] hover:bg-[#786bb8] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Upload Material
+                </Button>
+              )}
+            </div>
 
 
             {/* OVERVIEW TAB */}

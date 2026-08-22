@@ -1,11 +1,11 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, useRef } from "react"
-import { FileText, Download, ArrowUpRight, Menu, LogOut, ChevronDown, ChevronRight, Settings, LayoutDashboard, FolderOpen, Eye, Bell, User, Save, BookOpen, ArrowLeft, RefreshCw, HelpCircle, Plus, MessageSquare, Crown } from "lucide-react"
+import { FileText, Download, ArrowUpRight, Menu, LogOut, ChevronDown, ChevronRight, Settings, LayoutDashboard, FolderOpen, Eye, Bell, User, Save, BookOpen, HelpCircle, Plus, MessageSquare, Crown, Video, CheckSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -27,6 +27,7 @@ import { StudentNotesAI } from "@/components/student-notes-ai"
 import { StudentLectureSummaryModal } from "@/components/student-lecture-summary-modal"
 import { ExamInterfaceModal } from "@/components/exam-interface-modal"
 import { ClassroomLeaderboard } from "@/components/classroom-leaderboard"
+import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 
 import { DoubtThreadsModal } from "@/components/doubt-threads-modal"
 import { StudentGroupsModal } from "@/components/student-groups-modal"
@@ -337,23 +338,14 @@ export default function StudentPortal() {
     toast.success("Profile & Preferences saved successfully!")
   }
 
-  // Navigation: Exit Demo
-  const handleExitDemo = () => {
+  // Navigation: Logout
+  const handleLogout = () => {
     clearAuthenticatedUser()
-    toast.info("Exited Demo Workspace. Returned to AULYN Home.")
-    router.replace("/")
+    toast.success("Successfully logged out.")
+    router.push("/")
   }
 
-  // Navigation: Switch Role to Teacher Demo
-  const handleSwitchRole = (newRole: 'teacher' | 'student') => {
-    const mockUser = newRole === 'teacher'
-      ? { userId: 'teacher-demo', name: 'Prof. Sarah Jenkins', email: 'sarah.jenkins@aulyn.edu', role: 'teacher' as const }
-      : { userId: 'student-demo', name: 'Alex Rivera', email: 'alex.rivera@aulyn.edu', role: 'student' as const }
 
-    setAuthenticatedUser(mockUser)
-    toast.success(`Switched role to ${newRole === 'teacher' ? 'Teacher' : 'Student'} Workspace`)
-    router.replace(newRole === 'teacher' ? '/teacher' : '/student')
-  }
 
   const currentChapter = activeClassroom?.chapters?.[selectedChapterIdx] || activeClassroom?.chapters?.[0] || null
 
@@ -458,26 +450,6 @@ export default function StudentPortal() {
 
         </nav>
       </div>
-
-      <div className="pt-4 border-t border-[#E5DCD0] space-y-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleSwitchRole("teacher")}
-          className="w-full border-[#8B7EC8] text-[#8B7EC8] hover:bg-[#8B7EC8]/10 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Switch to Teacher Demo
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start text-[#77716A] hover:text-[#E76F51] text-xs font-semibold cursor-pointer"
-          onClick={handleExitDemo}
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" /> ← Back to AULYN / Exit Demo
-        </Button>
-      </div>
     </div>
   )
 
@@ -548,15 +520,6 @@ export default function StudentPortal() {
             <Crown className="w-4 h-4 text-[#E9B949]" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleExitDemo}
-            className="text-[#E76F51] hover:bg-[#E76F51]/10 font-bold text-xs rounded-xl hidden sm:flex items-center gap-1 cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Exit Demo
-          </Button>
-
           <div className="text-right hidden sm:block">
             <div className="flex items-center gap-1.5 justify-end">
               <p className="text-xs font-bold text-[#292724]">{studentName}</p>
@@ -568,7 +531,7 @@ export default function StudentPortal() {
           </div>
 
 
-          <Button variant="outline" size="sm" onClick={handleExitDemo} className="text-[#77716A] hover:text-red-600 border-[#E5DCD0] text-xs font-semibold rounded-xl cursor-pointer">
+          <Button variant="outline" size="sm" onClick={handleLogout} className="text-[#77716A] hover:text-red-600 border-[#E5DCD0] text-xs font-semibold rounded-xl cursor-pointer">
             <LogOut className="w-4 h-4 mr-1.5" /> Logout
           </Button>
         </div>
@@ -710,26 +673,43 @@ export default function StudentPortal() {
           </div>
 
           <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="w-full flex flex-col">
-            <TabsList className="flex overflow-x-auto w-full max-w-4xl bg-[#F1E8DD] p-1.5 rounded-xl border border-[#E5DCD0] shadow-2xs mb-6 gap-1 sm:gap-1.5 scrollbar-none">
-              <TabsTrigger value="overview" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="leaderboard" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-amber-600 data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Leaderboard
-              </TabsTrigger>
-              <TabsTrigger value="materials" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Materials
-              </TabsTrigger>
-              <TabsTrigger value="quizzes" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#E76F51] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Quizzes
-              </TabsTrigger>
-              <TabsTrigger value="notes-ai" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#8B7EC8] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Notes AI
-              </TabsTrigger>
-              <TabsTrigger value="visualizer" className="rounded-lg px-3.5 py-1.5 text-xs font-bold shrink-0 data-[state=active]:bg-[#FFF9F1] data-[state=active]:text-[#8B7EC8] data-[state=active]:shadow-2xs transition-all duration-200 cursor-pointer">
-                Code IDE
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <WorkspaceSwitcher
+                role="student"
+                activeTab={activeMainTab}
+                onSelectTab={setActiveMainTab}
+                onOpenModal={handleHelpNavigation}
+              />
+
+              {/* Contextual Quick Action */}
+              {activeMainTab === "overview" && (
+                <Button
+                  size="sm"
+                  onClick={() => setLiveSessionOpen(true)}
+                  className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Video className="w-3.5 h-3.5" /> Join Live Class
+                </Button>
+              )}
+              {activeMainTab === "quizzes" && (
+                <Button
+                  size="sm"
+                  onClick={() => setAdaptiveQuizOpen(true)}
+                  className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckSquare className="w-3.5 h-3.5" /> Take Adaptive Quiz
+                </Button>
+              )}
+              {activeMainTab === "notes-ai" && (
+                <Button
+                  size="sm"
+                  onClick={() => setAiTutorOpen(true)}
+                  className="bg-[#8B7EC8] hover:bg-[#786bb8] text-white font-bold text-xs rounded-xl shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" /> Ask Notes AI
+                </Button>
+              )}
+            </div>
 
 
             {/* OVERVIEW TAB */}
