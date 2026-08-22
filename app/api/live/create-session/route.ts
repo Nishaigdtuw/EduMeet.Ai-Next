@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { classId, className, title, topic, description, teacherId, teacherName } = body
+    const { classId, className, title, topic, description, teacherId, teacherName, customMeetingId } = body
 
     if (!classId || !title || !topic) {
       return NextResponse.json({ error: 'Missing required session parameters: classId, title, topic' }, { status: 400 })
@@ -26,7 +26,10 @@ export async function POST(req: Request) {
     }
 
     const sessionId = `sess-${classId}-${Date.now()}`
-    const meetingId = generateMeetingId()
+    const meetingId = customMeetingId && customMeetingId.trim()
+      ? customMeetingId.trim().toUpperCase()
+      : generateMeetingId()
+
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
     const newSession: LiveMeetingSession = {

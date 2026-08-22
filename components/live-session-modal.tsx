@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from "react"
-import { Video, BookOpen, Plus, Copy, Check } from "lucide-react"
+import { Video, BookOpen, Plus, Copy, Check, Hash } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -16,7 +16,7 @@ import { getAuthenticatedUser } from "@/lib/auth-guard"
 interface LiveSessionModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  classroom: ClassroomData
+  classroom: ClassroomData | null
   userRole: 'student' | 'teacher'
   studentName?: string
 }
@@ -32,17 +32,21 @@ export function LiveSessionModal({
   const [loading, setLoading] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
 
+  // Fallback classroom details
+  const targetClass = classroom || { classId: "dsa-2026", className: "Data Structures & Algorithms", code: "DSA2026", ownerId: "teacher-demo" }
+
   // Teacher Create Session Form State
   const [sessionTitle, setSessionTitle] = useState("")
   const [sessionTopic, setSessionTopic] = useState("")
   const [sessionDesc, setSessionDesc] = useState("")
+  const [customMeetingId, setCustomMeetingId] = useState("")
 
-  // Student Join By Meeting ID State
+  // Join By Meeting ID State
   const [inputMeetingId, setInputMeetingId] = useState("")
 
   useEffect(() => {
-    if (classroom && open) {
-      const active = getLiveSession(classroom.classId)
+    if (open) {
+      const active = getLiveSession(targetClass.classId)
       if (active && active.status === 'Live') {
         setSession(active)
         if (active.meetingId) {
@@ -51,12 +55,13 @@ export function LiveSessionModal({
       } else {
         setSession(null)
         setInputMeetingId("")
-        setSessionTitle(`${classroom.className} Lecture`)
+        setCustomMeetingId("")
+        setSessionTitle(`${targetClass.className} Lecture`)
         setSessionTopic("Course Algorithms & Concepts")
         setSessionDesc("Live real-time lecture session.")
       }
     }
-  }, [classroom, open])
+  }, [open, targetClass.classId, targetClass.className])
 
   const handleCopyMeetingId = (meetingId: string) => {
     navigator.clipboard.writeText(meetingId)
@@ -82,13 +87,14 @@ export function LiveSessionModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          classId: classroom.classId,
-          className: classroom.className,
+          classId: targetClass.classId,
+          className: targetClass.className,
           title: sessionTitle.trim(),
           topic: sessionTopic.trim(),
           description: sessionDesc.trim(),
           teacherId,
-          teacherName
+          teacherName,
+          customMeetingId: customMeetingId.trim() || undefined
         })
       })
 
@@ -120,10 +126,11 @@ export function LiveSessionModal({
     const user = getAuthenticatedUser()
 
     try {
-      const res = await fetch(`/api/live/session?meetingId=${encodeURIComponent(targetId)}&userId=${user?.userId || 'student-demo'}&role=${userRole}`)
+      const res = await fetch(`/api/live/session?meetingId=${encodeURIComponent(targetId)}&userId=${user?.userId || 'teacher-demo'}&role=${userRole}`)
       const data = await res.json()
 
       if (data.success && data.sessionId) {
+        toast.success(`Joined session for Meeting ID: ${targetId}`)
         onOpenChange(false)
         router.push(`/live/${data.sessionId}`)
       } else {
@@ -153,18 +160,18 @@ export function LiveSessionModal({
           </div>
 
           <DialogTitle className="text-xl font-serif font-black text-[#292724] mt-2">
-            {classroom?.className} — {session ? session.topic : 'Live Classroom Studio'}
+            {targetClass.className} — {session ? session.topic : 'Live Classroom Studio'}
           </DialogTitle>
           <DialogDescription className="text-xs text-[#77716A]">
             {userRole === 'teacher'
-              ? 'Educator control panel for starting live sessions, retrieving Meeting IDs, and monitoring real-time lecture notes.'
+              ? 'Educator control panel for launching live sessions, adding custom Meeting IDs, and hosting WebRTC classes.'
               : 'Join live class using Meeting ID and view real-time lecture notes as the lecture progresses.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 pt-4">
           {/* ACTIVE SESSION VIEW FOR TEACHER OR ENROLLED STUDENT */}
-          {session ? (
+          {session && (
             <div className="p-4 bg-gradient-to-r from-red-50 to-amber-50 border-2 border-red-300 rounded-2xl shadow-sm space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center space-x-3">
@@ -213,8 +220,10 @@ export function LiveSessionModal({
                 </div>
               )}
             </div>
-          ) : userRole === 'teacher' ? (
-            /* TEACHER CREATE LIVE CLASS FORM */
+          )}
+
+          {/* TEACHER CREATE LIVE CLASS FORM */}
+          {userRole === 'teacher' && (
             <form onSubmit={handleStartNewLiveClass} className="bg-white border border-[#E5DCD0] rounded-2xl p-5 shadow-2xs space-y-4">
               <div className="flex items-center space-x-2 text-[#E76F51]">
                 <Plus className="w-5 h-5" />
@@ -244,6 +253,17 @@ export function LiveSessionModal({
               </div>
 
               <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-[#292724]">Specify Custom Meeting ID (Optional)</Label>
+                <Input
+                  value={customMeetingId}
+                  onChange={(e) => setCustomMeetingId(e.target.value)}
+                  placeholder="e.g. AULYN-7KQ9-X2M4 (Leave blank to auto-generate)"
+                  className="bg-[#FFF9F1] border-[#E5DCD0] text-xs font-mono font-bold uppercase tracking-wider rounded-xl"
+                />
+                <p className="text-[10px] text-[#77716A]">Provide your own custom Meeting ID or leave empty to auto-generate a unique code.</p>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-[#292724]">Description / Agenda (Optional)</Label>
                 <Input
                   value={sessionDesc}
@@ -264,38 +284,38 @@ export function LiveSessionModal({
                 </Button>
               </div>
             </form>
-          ) : null}
-
-          {/* STUDENT JOIN BY MEETING ID FORM */}
-          {userRole === 'student' && (
-            <form onSubmit={handleJoinByMeetingId} className="bg-white border border-[#E5DCD0] rounded-2xl p-5 shadow-2xs space-y-4">
-              <div className="flex items-center space-x-2 text-[#8B7EC8]">
-                <Video className="w-5 h-5" />
-                <h3 className="text-sm font-serif font-bold text-[#292724]">Join Live Class using Meeting ID</h3>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-[#292724]">Enter Meeting ID</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={inputMeetingId}
-                    onChange={(e) => setInputMeetingId(e.target.value)}
-                    placeholder="e.g. AULYN-7KQ9-X2M4"
-                    className="bg-[#FFF9F1] border-[#E5DCD0] text-xs font-mono font-bold uppercase tracking-wider rounded-xl"
-                    required
-                  />
-                  <Button
-                    type="submit"
-                    disabled={loading || !inputMeetingId.trim()}
-                    className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs px-6 rounded-xl shadow-md cursor-pointer shrink-0"
-                  >
-                    {loading ? "Joining..." : "Join Class"}
-                  </Button>
-                </div>
-                <p className="text-[11px] text-[#77716A]">Ask your educator for the unique AULYN Meeting ID to enter the live session.</p>
-              </div>
-            </form>
           )}
+
+          {/* JOIN BY MEETING ID FORM (BOTH TEACHER & STUDENT) */}
+          <form onSubmit={handleJoinByMeetingId} className="bg-white border border-[#E5DCD0] rounded-2xl p-5 shadow-2xs space-y-4">
+            <div className="flex items-center space-x-2 text-[#8B7EC8]">
+              <Hash className="w-5 h-5" />
+              <h3 className="text-sm font-serif font-bold text-[#292724]">
+                {userRole === 'teacher' ? 'Host / Join Class using Meeting ID' : 'Join Live Class using Meeting ID'}
+              </h3>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-[#292724]">Enter Meeting ID</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={inputMeetingId}
+                  onChange={(e) => setInputMeetingId(e.target.value)}
+                  placeholder="e.g. AULYN-7KQ9-X2M4"
+                  className="bg-[#FFF9F1] border-[#E5DCD0] text-xs font-mono font-bold uppercase tracking-wider rounded-xl"
+                  required
+                />
+                <Button
+                  type="submit"
+                  disabled={loading || !inputMeetingId.trim()}
+                  className="bg-[#E76F51] hover:bg-[#d55e42] text-white font-bold text-xs px-6 rounded-xl shadow-md cursor-pointer shrink-0"
+                >
+                  {loading ? "Joining..." : userRole === 'teacher' ? "Host / Join" : "Join Class"}
+                </Button>
+              </div>
+              <p className="text-[11px] text-[#77716A]">Enter an existing AULYN Meeting ID to directly access the live classroom room.</p>
+            </div>
+          </form>
 
           <Card className="bg-white border border-[#E5DCD0] shadow-2xs rounded-2xl p-5 space-y-3">
             <div className="flex items-center space-x-2 text-[#8B7EC8]">

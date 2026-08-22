@@ -546,9 +546,15 @@ ${activeClassroom.assignments?.map(a => `Assignment: ${a.title} | Submissions: $
       <NotificationsDrawer open={notificationsOpen} onOpenChange={setNotificationsOpen} userRole="teacher" notifications={notifications} />
 
 
+      <LiveSessionModal
+        open={liveSessionOpen}
+        onOpenChange={setLiveSessionOpen}
+        classroom={activeClassroom || (classrooms && classrooms[0]) || { classId: "dsa-2026", className: "Data Structures & Algorithms", code: "DSA2026", ownerId: "teacher-demo" }}
+        userRole="teacher"
+      />
+
       {activeClassroom && (
         <>
-          <LiveSessionModal open={liveSessionOpen} onOpenChange={setLiveSessionOpen} classroom={activeClassroom} userRole="teacher" />
           <CreateAssignmentModal open={createAssignmentOpen} onOpenChange={setCreateAssignmentOpen} activeClass={activeClassroom} />
           <DoubtThreadsModal open={doubtThreadsOpen} onOpenChange={setDoubtThreadsOpen} classId={activeClassroom.classId} className={activeClassroom.className} userRole="teacher" />
           <StudentGroupsModal open={studentGroupsOpen} onOpenChange={setStudentGroupsOpen} classId={activeClassroom.classId} className={activeClassroom.className} userRole="teacher" />
